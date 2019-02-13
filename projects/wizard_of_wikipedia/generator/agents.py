@@ -1,16 +1,14 @@
 """Agents for handling the generation aspects of Wizard.
 """
-from collections import namedtuple, defaultdict
 from itertools import chain
 
 import torch as th
 from torch.nn import DataParallel
 import numpy as np
 
-from parlai.core.agents import Agent
 from parlai.core.torch_agent import Batch as TABatch
 from parlai.core.metrics import _f1_score
-from parlai.core.utils import set_namedtuple_defaults, padded_tensor
+from parlai.core.utils import padded_tensor
 
 from parlai.agents.transformer.transformer import (
     TransformerGeneratorAgent,
@@ -21,17 +19,31 @@ from parlai.tasks.wizard_of_wikipedia.agents import TOKEN_KNOWLEDGE
 
 TOKEN_DIALOG = '__dialog__'
 
+
 # extend the default batch
-Batch = namedtuple(
-    'Batch', TABatch._fields + (
+class Batch(TABatch):
+    def __init__(
+        self,
         # needed for evaluation metrics
-        'checked_sentence', 'all_labels',
-        # needed for the model
-        'cs_ids', 'know_vec', 'ck_mask', 'use_cs_ids',
-        'knowledge',
-    )
-)
-set_namedtuple_defaults(Batch)
+        checked_sentence=None,
+        # needed for model
+        cs_ids=None,
+        know_vec=None,
+        ck_mask=None,
+        use_cs_ids=None,
+        knowledge=None,
+        **kwargs,
+    ):
+        super().__init__(
+            checked_sentence=checked_sentence,
+            cs_ids=cs_ids,
+            know_vec=know_vec,
+            ck_mask=ck_mask,
+            use_cs_ids=use_cs_ids,
+            knowledge=knowledge,
+            **kwargs,
+        )
+
 
 DEFAULT_OPTS = {
     "lr": 3e-4,
@@ -74,15 +86,8 @@ class _GenericWizardAgent(TransformerGeneratorAgent):
             )
             checked_sentences.append(checked_sentence)
 
-        all_labels = [o.get('eval_labels', None) for o in reordered_observations]
-        newbatch = Batch(
-            # custom fields for the wizard model
-            checked_sentence=checked_sentences,
-            all_labels=all_labels,
-            # inherit everything else from torchagent
-            **batch._asdict()
-        )
-        return newbatch
+        batch['checked_sentence'] = checked_sentences
+        return batch
 
 
 class TwoStageAgent(_GenericWizardAgent):
@@ -212,13 +217,12 @@ class EndToEndAgent(_GenericWizardAgent):
             ck_mask = ck_mask.cuda()
             cs_ids = cs_ids.cuda()
 
-        newbatch = batch._asdict()
-        newbatch['know_vec'] = knowledge_vec
-        newbatch['ck_mask'] = ck_mask
-        newbatch['cs_ids'] = cs_ids
-        newbatch['use_cs_ids'] = is_training
-        newbatch['knowledge'] = np.array(flattened_knowledge).reshape(N, K)
-        return Batch(**newbatch)
+        batch['know_vec'] = knowledge_vec
+        batch['ck_mask'] = ck_mask
+        batch['cs_ids'] = cs_ids
+        batch['use_cs_ids'] = is_training
+        batch['knowledge'] = np.array(flattened_knowledge).reshape(N, K)
+        return batch
 
     @classmethod
     def add_cmdline_args(cls, argparser):
@@ -248,11 +252,6 @@ class EndToEndAgent(_GenericWizardAgent):
         argparser.add_argument(
             '--use-addl-resid', type='bool', default=False,
         )
-
-    def _update_metrics(self, metrics, sample):
-        self.know_pred = metrics['know_pred']
-        del metrics['know_pred']
-        return super()._update_metrics(metrics, sample)
 
     def eval_step(self, batch):
         predictions = super().eval_step(batch)
@@ -288,14 +287,6 @@ class EndToEndAgent(_GenericWizardAgent):
             self._copy_embeddings(
                 model.encoder.embed_tokens.weight, self.args.embedding_type
             )
-        if self.args.multigpu:
-            dp = DataParallel(model)
-            dp.max_decoder_positions = model.max_decoder_positions
-            dp.get_normalized_probs = model.get_normalized_probs
-            dp.get_targets = model.get_targets
-            dp.encoder = model.encoder
-            dp.decoder = model.decoder
-            model = dp
         return model
 
     def _make_sample(self, batch):
