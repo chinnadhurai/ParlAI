@@ -3,18 +3,15 @@
 from itertools import chain
 
 import torch as th
-from torch.nn import DataParallel
 import numpy as np
 
 from parlai.core.torch_agent import Batch as TABatch
 from parlai.core.metrics import _f1_score
 from parlai.core.utils import padded_tensor
 
-from parlai.agents.transformer.transformer import (
-    TransformerGeneratorAgent,
-)
+from parlai.agents.transformer.transformer import TransformerGeneratorAgent
 
-from .modules import KnowledgeTransformerModel
+from .modules import EndToEndModel, EndToEndCriterion
 from parlai.tasks.wizard_of_wikipedia.agents import TOKEN_KNOWLEDGE
 
 TOKEN_DIALOG = '__dialog__'
@@ -46,10 +43,10 @@ class Batch(TABatch):
 
 
 DEFAULT_OPTS = {
-    "lr": 3e-4,
+    "learningrate": 3e-4,
     "optimizer": "adam",
     "lr_scheduler": "invsqrt",
-    "warmup_updates": 5000,
+    "warmup_updates": 1000,
     "betas": "0.9,0.98",
     "clip_norm": 0.1,
     "arch": "transformer",
@@ -63,13 +60,10 @@ DEFAULT_OPTS = {
     "dict_textfields": "text,labels,chosen_topic,checked_sentence,knowledge,title",
 }
 
-END_TO_END_DEFAULT_OPTS = {
-    "knowledge_truncate": 32,
-    "criterion": "wizard",
-}
-
 
 class _GenericWizardAgent(TransformerGeneratorAgent):
+    # todo:
+    # - dict agent stuff
     @classmethod
     def add_cmdline_args(cls, argparser):
         argparser.set_defaults(**DEFAULT_OPTS)
@@ -95,6 +89,7 @@ class TwoStageAgent(_GenericWizardAgent):
         if 'text' not in obs:
             return obs
 
+        # TODO: resolve this with #1421
         # get the dialog stuff
         reply = self.last_reply()
         self.observation = self.get_dialog_history(obs, reply=reply)
@@ -127,6 +122,15 @@ class TwoStageAgent(_GenericWizardAgent):
 
 
 class EndToEndAgent(_GenericWizardAgent):
+    def _init_cuda_buffer(self, *args, **kwargs):
+        # just do nothing
+        pass
+
+    def build_criterion(self):
+        self.criterion = EndToEndCriterion(self.opt)
+        if self.use_cuda:
+            self.criterion.cuda()
+
     def _parse_knowledge(self, obs):
         if 'knowledge_parsed' in obs:
             # make a copy of the list to prevent the future padding step from
@@ -141,7 +145,10 @@ class EndToEndAgent(_GenericWizardAgent):
         obs_know = [k for k in obs_know if k]
 
         # we want the correct knowledge to always be in index 0
-        i = obs_know.index(checked_sentence)
+        try:
+            i = obs_know.index(checked_sentence)
+        except ValueError:
+            import ipdb; ipdb.set_trace()
         obs_know[0], obs_know[i] = obs_know[i], obs_know[0]
 
         obs['knowledge_parsed'] = obs_know
@@ -226,19 +233,15 @@ class EndToEndAgent(_GenericWizardAgent):
 
     @classmethod
     def add_cmdline_args(cls, argparser):
-        argparser.set_defaults(**END_TO_END_DEFAULT_OPTS)
         super(EndToEndAgent, cls).add_cmdline_args(argparser)
         group = argparser.add_argument_group("EndToEnd Agent")
         group.add_argument(
-            '--knowledge-truncate', type=int,
+            '--knowledge-truncate', type=int, default=32,
             help='Knowledge truncation field. Defaults to same as --truncate.'
         )
         group.add_argument(
             '--max-knowledge', type=int,
             help='Reduce the amount of negative knowledge at train time.'
-        )
-        argparser.add_argument(
-            '--use-cosine', type='bool', default=False,
         )
         argparser.add_argument(
             '--use-sqrt', type='bool', default=True,
@@ -247,10 +250,16 @@ class EndToEndAgent(_GenericWizardAgent):
             '--use-embed-dim', type='bool', default=False
         )
         argparser.add_argument(
-            '--shared-encoder', type='bool', default=False
+            '--knowledge-alpha', type=float, default=0.95,
+            help='Weight on the knowledge-attn loss'
         )
-        argparser.add_argument(
-            '--use-addl-resid', type='bool', default=False,
+
+    def _model_input(self, batch):
+        return (
+            batch.text_vec,
+            batch.know_vec,
+            batch.ck_mask,
+            batch.cs_ids,
         )
 
     def eval_step(self, batch):
@@ -280,21 +289,11 @@ class EndToEndAgent(_GenericWizardAgent):
         self.max_knowledge = opt.get('max_knowledge')
 
     def build_model(self):
-        from fairseq.models.transformer import transformer_iwslt_de_en
-        transformer_iwslt_de_en(self.args)
-        model = KnowledgeTransformerModel.build_model(self.args, self.task)
-        if self.args.embedding_type != 'random':
+        self.model = EndToEndModel(self.opt, self.dict)
+        if self.opt['embedding_type'] != 'random':
             self._copy_embeddings(
-                model.encoder.embed_tokens.weight, self.args.embedding_type
+                self.model.embeddings.weight, self.opt['embedding_type']
             )
-        return model
-
-    def _make_sample(self, batch):
-        sample = super()._make_sample(batch)
-        # add in the special fields
-        sample["net_input"]["know_tokens"] = batch.know_vec
-        sample["net_input"]["know_lengths"] = self._seq_length(batch.know_vec)
-        sample["net_input"]["ck_mask"] = batch.ck_mask
-        sample["net_input"]["cs_ids"] = batch.cs_ids
-        sample["net_input"]["use_cs_ids"] = batch.use_cs_ids
-        return sample
+        if self.use_cuda:
+            self.model = self.model.cuda()
+        return self.model
