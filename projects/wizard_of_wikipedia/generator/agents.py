@@ -1,4 +1,11 @@
-"""Agents for handling the generation aspects of Wizard.
+#!/usr/bin/env python
+
+# Copyright (c) Facebook, Inc. and its affiliates.
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+"""
+Agents for handling the generation aspects of Wizard.
 """
 from itertools import chain
 
@@ -11,7 +18,7 @@ from parlai.core.utils import padded_tensor
 
 from parlai.agents.transformer.transformer import TransformerGeneratorAgent
 
-from .modules import EndToEndModel, EndToEndCriterion
+from .modules import EndToEndModel
 from parlai.tasks.wizard_of_wikipedia.agents import TOKEN_KNOWLEDGE
 
 TOKEN_DIALOG = '__dialog__'
@@ -96,7 +103,7 @@ class TwoStageAgent(_GenericWizardAgent):
         # we need to store the old text so that we can restore it
         oldtext = obs['text']
 
-        # now we want to force prepend the knowlege stuff
+        # now we want to force prepend the knowledge stuff
         fields = []
         if 'chosen_topic' in obs:
             fields += [obs['title']]
@@ -122,14 +129,47 @@ class TwoStageAgent(_GenericWizardAgent):
 
 
 class EndToEndAgent(_GenericWizardAgent):
-    def _init_cuda_buffer(self, *args, **kwargs):
-        # just do nothing
-        pass
+    def __init__(self, opt, shared=None):
+        super().__init__(opt, shared)
 
-    def build_criterion(self):
-        self.criterion = EndToEndCriterion(self.opt)
-        if self.use_cuda:
-            self.criterion.cuda()
+        # knowledge truncate defaults to the same as --truncate
+        self.knowledge_truncate = opt.get('knowledge_truncate')
+        if not self.knowledge_truncate:
+            self.knowledge_truncate = opt['truncate']
+        self.max_knowledge = opt.get('max_knowledge')
+        self.knowledge_alpha = opt['knowledge_alpha']
+
+    def _dummy_batch(self, bsz, maxlen):
+        batch = super()._dummy_batch(bsz, maxlen)
+        batch['know_vec'] = th.zeros(bsz, 2, 2).long().cuda()
+        batch['ck_mask'] = th.ones(bsz, 2).byte().cuda()
+        batch['cs_ids'] = th.zeros(bsz).long().cuda()
+        return batch
+
+    def compute_loss(self, batch, return_output=False):
+        # first compute our regular forced decoding loss
+        tokenloss, model_output = super().compute_loss(batch, return_output=True)
+
+        encoder_states = model_output[2]
+        ctx_know_attn = encoder_states[2]
+
+        if self.knowledge_alpha == 0.0:
+            loss = tokenloss
+        else:
+            know_loss = th.nn.functional.cross_entropy(
+                ctx_know_attn.float(),
+                batch.cs_ids,
+                reduce=True,
+                size_average=True
+            )
+            loss = (
+                (1 - self.knowledge_alpha) * tokenloss +
+                self.knowledge_alpha * know_loss
+            )
+        if return_output:
+            return (loss, model_output)
+        else:
+            return loss
 
     def _parse_knowledge(self, obs):
         if 'knowledge_parsed' in obs:
@@ -148,7 +188,11 @@ class EndToEndAgent(_GenericWizardAgent):
         try:
             i = obs_know.index(checked_sentence)
         except ValueError:
-            import ipdb; ipdb.set_trace()
+            # uh oh, couldn't find the sentence in the knowledge. This happens for
+            # one or two examples in the training set. We can just artificially
+            # put it back in
+            i = 0
+            obs_know[0] = checked_sentence
         obs_know[0], obs_know[i] = obs_know[i], obs_know[0]
 
         obs['knowledge_parsed'] = obs_know
@@ -236,6 +280,10 @@ class EndToEndAgent(_GenericWizardAgent):
         super(EndToEndAgent, cls).add_cmdline_args(argparser)
         group = argparser.add_argument_group("EndToEnd Agent")
         group.add_argument(
+            '--knowledge-alpha', type=float, default=0.95,
+            help='Weight on the knowledge-attn loss'
+        )
+        group.add_argument(
             '--knowledge-truncate', type=int, default=32,
             help='Knowledge truncation field. Defaults to same as --truncate.'
         )
@@ -278,15 +326,6 @@ class EndToEndAgent(_GenericWizardAgent):
             ))
 
         return predictions
-
-    def __init__(self, opt, shared=None):
-        super().__init__(opt, shared)
-
-        # knowledge truncate defaults to the same as --truncate
-        self.knowledge_truncate = opt.get('knowledge_truncate')
-        if not self.knowledge_truncate:
-            self.knowledge_truncate = opt['truncate']
-        self.max_knowledge = opt.get('max_knowledge')
 
     def build_model(self):
         self.model = EndToEndModel(self.opt, self.dict)

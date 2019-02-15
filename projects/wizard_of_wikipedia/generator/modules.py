@@ -35,25 +35,10 @@ class EndToEndModel(TransformerGeneratorModel):
     def __init__(self, opt, dictionary):
         super().__init__(opt, dictionary)
         self.encoder = ContextKnowledgeEncoder(self.encoder)
+        self.decoder = ContextKnowledgeDecoder(self.decoder)
 
     def reorder_encoder_states(self, encoder_out, new_order):
         raise NotImplementedError
-        if encoder_out['encoder_out'] is not None:
-            encoder_out['encoder_out'] = \
-                encoder_out['encoder_out'].index_select(1, new_order)
-        if encoder_out['encoder_padding_mask'] is not None:
-            encoder_out['encoder_padding_mask'] = \
-                encoder_out['encoder_padding_mask'].index_select(0, new_order)
-        if encoder_out['cs_out'] is not None:
-            encoder_out['cs_out'] = \
-                encoder_out['cs_out'].index_select(1, new_order)
-        if encoder_out['cs_padding_mask'] is not None:
-            encoder_out['cs_padding_mask'] = \
-                encoder_out['cs_padding_mask'].index_select(0, new_order)
-        if encoder_out['ck_attn'] is not None:
-            encoder_out['ck_attn'] = \
-                encoder_out['ck_attn'].index_select(0, new_order)
-        return encoder_out
 
 
 class ContextKnowledgeEncoder(nn.Module):
@@ -106,15 +91,25 @@ class ContextKnowledgeEncoder(nn.Module):
         full_enc = th.cat([context_encoded, cs_encoded], dim=1)
         full_mask = th.cat([context_mask, cs_mask], dim=1)
 
-        # merge the two items
-        return full_enc, full_mask
+        # also return the knowledge selection mask for the loss
+        return full_enc, full_mask, ck_attn
 
-    def reorder_encoder_out(self, encoder_out, new_order):
-        assert False, "TODO"
+
+class ContextKnowledgeDecoder(nn.Module):
+    def __init__(self, transformer):
+        super().__init__()
+        self.transformer = transformer
+
+    def forward(self, input, encoder_state, incr_state=None):
+        # our CK Encoder returns an extra output which the Transformer decoder
+        # doesn't expect (the knowledge selection mask). Just chop it off
+        encoder_output, encoder_mask, _ = encoder_state
+        return self.transformer(input, (encoder_output, encoder_mask), incr_state)
 
 
 class EndToEndCriterion(nn.Module):
     def __init__(self, opt):
+        super().__init__()
         self.knowledge_alpha = opt['knowledge_alpha']
 
     def forward(self, model, sample):
