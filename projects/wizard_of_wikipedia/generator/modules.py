@@ -50,7 +50,7 @@ class EndToEndModel(TransformerGeneratorModel):
 class ContextKnowledgeEncoder(nn.Module):
     def __init__(self, transformer):
         super().__init__()
-        # The transformer_enc takes care of most of the work, but other modules
+        # The transformer takes care of most of the work, but other modules
         # expect us to have an embeddings available
         self.embeddings = transformer.embeddings
         self.embed_dim = transformer.embeddings.embedding_dim
