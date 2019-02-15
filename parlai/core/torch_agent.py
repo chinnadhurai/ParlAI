@@ -1159,6 +1159,63 @@ class TorchAgent(Agent):
                     # for convenience of working with jq, make sure there's a newline
                     handle.write('\n')
 
+    def load_state_dict(self, state_dict):
+        """
+        Directly load in the states dict into self.model.
+
+        Useful for overriding in the case of pulling in a particular pretrained
+        model.
+        """
+        need = self.model.state_dict()
+        transformed = {}
+        for k, v in list(state_dict.items()):
+            if "_float_tensor" in k:
+                continue
+            if ".version" in k:
+                continue
+
+            k = k.replace("encoder.transformer_enc.", "encoder.transformer.")
+            k = k.replace("decoder.", "decoder.transformer.")
+            k = k.replace("embed_tokens", "embeddings")
+            k = k.replace(".fc1", ".ffn.lin1")
+            k = k.replace(".fc2", ".ffn.lin2")
+            k = k.replace(".encoder_attn", ".encoder_attention")
+            k = k.replace(".out_proj", ".out_lin")
+            k = k.replace(".self_attn", ".self_attention")
+            k = k.replace(".layer_norms.0", ".norm1")
+            k = k.replace(".layer_norms.1", ".norm2")
+            k = k.replace("self_attention_layer_norm", "norm1")
+            k = k.replace("encoder_attention_layer_norm", "norm2")
+            k = k.replace("final_layer_norm", "norm3")
+            if ".knowledge_enc." in k:
+                continue
+            if "encoder" in k:
+                k = k.replace(".self_attention", ".attention")
+
+            if "in_proj" in k:
+                # fairseq smashes q k and v weights together
+                for n, c in zip("qkv", v.chunk(3)):
+                    transformed[k.replace("in_proj_", n + "_lin.")] = c
+                continue
+            transformed[k] = v
+        transformed["START"] = self.model.START.data
+        transformed["embeddings.weight"] = transformed["encoder.embeddings.weight"]
+        transformed["encoder.transformer.position_embeddings.weight"] = self.model.encoder.transformer.position_embeddings.weight.data
+        transformed["decoder.transformer.position_embeddings.weight"] = self.model.decoder.transformer.position_embeddings.weight.data
+        # with open("need.keys", "w") as f:
+        #     json.dump([
+        #         (k, tuple(need[k].size()))
+        #         for k in need.keys()
+        #         if k not in transformed
+        #     ], f, sort_keys=True, indent=4)
+        # with open("have.keys", "w") as f:
+        #     json.dump([
+        #         (k, tuple(transformed[k].size()))
+        #         for k in transformed.keys()
+        #         if k not in need
+        #     ], f, sort_keys=True, indent=4)
+        self.model.load_state_dict(transformed)
+
     def load(self, path):
         """Return opt and model states.
 
@@ -1166,7 +1223,7 @@ class TorchAgent(Agent):
         """
         states = torch.load(path, map_location=lambda cpu, _: cpu)
         if 'model' in states:
-            self.model.load_state_dict(states['model'])
+            self.load_state_dict(states['model'])
         if 'optimizer' in states and hasattr(self, 'optimizer'):
             self.optimizer.load_state_dict(states['optimizer'])
         return states
