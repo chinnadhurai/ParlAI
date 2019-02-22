@@ -239,11 +239,14 @@ class DialogPartnerWorld(World):
             # Add passed in agents directly.
             self.agents = agents
         self.acts = [None] * len(self.agents)
+        self.opt = opt
 
     def parley(self):
         """Agent 0 goes first. Alternate between the two agents."""
         acts = self.acts
         agents = self.agents
+        #import ipdb; ipdb.set_trace()
+        #eou = agents[1].dict.tok2ind['\n']  
         acts[0] = agents[0].act()
         agents[1].observe(validate(acts[0]))
         acts[1] = agents[1].act()
