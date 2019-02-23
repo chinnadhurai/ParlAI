@@ -97,7 +97,7 @@ def eval_model(opt, printargs=None, print_parser=None):
     print('finished evaluating task {} using datatype {}'.format(
           opt['task'], opt.get('datatype', 'N/A')))
     report = world.report()
-    print(report)
+    print("FINAL_REPORT: {}".format(report))
     return report
 
 
