@@ -36,6 +36,8 @@ def setup_args(parser=None):
                         help="list of metrics to show/compute, e.g. "
                              "ppl,f1,accuracy,hits@1."
                              "If 'all' is specified [default] all are shown.")
+    parser.add_argument('-pb', '--perturb', type=str, default="None")
+    parser.add_argument('-sft', '--skip_first_turn', type='bool', default=False) 
     TensorboardLogger.add_cmdline_args(parser)
     parser.set_defaults(datatype='valid')
     return parser

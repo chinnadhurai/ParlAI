@@ -56,6 +56,8 @@ from parlai.core.agents import _create_task_agents, create_agents_from_shared
 from parlai.core.metrics import aggregate_metrics
 from parlai.core.utils import Timer, display_messages
 from parlai.tasks.tasks import ids_to_tasks
+from parlai.core.perturb_utils import Perturb
+
 
 
 def validate(observation):
@@ -240,18 +242,27 @@ class DialogPartnerWorld(World):
             self.agents = agents
         self.acts = [None] * len(self.agents)
         self.opt = opt
+        self.perturber = Perturb(opt)
+        self.num_acts_so_far = 0
+        if self.opt["skip_first_turn"]:
+            self.acts[0] = self.agents[0].act()
+            self.agents[1].observe(validate(self.acts[0]))
+        
 
     def parley(self):
         """Agent 0 goes first. Alternate between the two agents."""
         acts = self.acts
         agents = self.agents
-        #import ipdb; ipdb.set_trace()
-        #eou = agents[1].dict.tok2ind['\n']  
-        acts[0] = agents[0].act()
+        acts[0] = self.perturber.perturb(agents[0].act())
         agents[1].observe(validate(acts[0]))
         acts[1] = agents[1].act()
         agents[0].observe(validate(acts[1]))
         self.update_counters()
+        if self.opt["skip_first_turn"]:
+            if self.episode_done():
+                self.acts[0] = self.agents[0].act()
+                self.agents[1].observe(validate(self.acts[0]))
+                
 
     def episode_done(self):
         """Only the first agent indicates when the episode is done."""
