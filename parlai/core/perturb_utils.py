@@ -12,6 +12,11 @@ class Perturb(object):
         if self.opt['perturb'] == 'None':
             return act
         turns = self._get_turns(act)
+        if len(turns) < 3:
+            print("less than 3 turns")
+            print("turns : {}".format(act['text']))
+            return act
+            
         if 'random' in self.opt['perturb']:
             perturb_op = np.random.choice([self.swap, self.drop, self.repeat])
             turns = perturb_op(turns)

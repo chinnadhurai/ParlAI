@@ -253,8 +253,8 @@ class DialogPartnerWorld(World):
         """Agent 0 goes first. Alternate between the two agents."""
         acts = self.acts
         agents = self.agents
-        acts[0] = self.perturber.perturb(agents[0].act())
-        agents[1].observe(validate(acts[0]))
+        acts[0] = agents[0].act()
+        agents[1].observe(validate(acts[0]), self.perturber)
         acts[1] = agents[1].act()
         agents[0].observe(validate(acts[1]))
         self.update_counters()

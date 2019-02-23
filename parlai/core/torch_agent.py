@@ -1099,7 +1099,7 @@ class TorchAgent(Agent):
         preds = sorted((b, p) for b, p in self.replies['predictions'].items())
         return [p for b, p in preds]
 
-    def observe(self, observation):
+    def observe(self, observation, perturber=None):
         """Process incoming message in preparation for producing a response.
 
         This includes remembering the past history of the conversation.
@@ -1109,6 +1109,8 @@ class TorchAgent(Agent):
         self.observation = self.get_dialog_history(
             observation, reply=reply, add_person_tokens=self.add_person_tokens,
             add_p1_after_newln=self.opt.get('add_p1_after_newln', False))
+        if perturber:
+            self.observation = perturber.perturb(self.observation)
         return self.vectorize(self.observation,
                               text_truncate=self.text_truncate,
                               label_truncate=self.label_truncate)
