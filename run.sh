@@ -20,12 +20,12 @@ if [ "$2" = "s2s" ]
 then
     echo "MODELTYPE: "$2
     EVAL_MODEL_ARGS="-m seq2seq"
-    TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
+    TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000 --bidirectional true"
 elif [ "$2" = "s2s_att_general" ]
 then
     echo "MODELTYPE: "$2
     EVAL_MODEL_ARGS="-m seq2seq -att general"
-    TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
+    TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000 --bidirectional true"
 elif [ "$2" = "transformer" ]
 then
     echo "MODELTYPE: "$2
@@ -78,5 +78,5 @@ then
 elif [ $RUN_MODE = "train" ]
 then
     echo $TRAIN_MODEL_ARGS
-    python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS --adam-betas '(0.9, 0.98)'  
+    python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS
 fi
