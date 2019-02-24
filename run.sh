@@ -3,7 +3,7 @@
 
 LOGDIR="perturb_log_files/"
 SAVEDIR="save_dir/"
-GPU="1"
+GPU="0"
 mkdir -p $LOGDIR
 
 if [ -z "$1" ]
@@ -84,7 +84,7 @@ then
                 echo "---------------------"
                 echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE
                 LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE".txt"
-                python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE --datatype $DATATYP > $LOGFILE
+                python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE --datatype $DATATYPE > $LOGFILE
                 grep FINAL_REPORT $LOGFILE
             done
 
