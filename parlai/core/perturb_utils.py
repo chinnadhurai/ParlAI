@@ -22,6 +22,12 @@ class Perturb(object):
                 [self.swap, self.drop, self.repeat, self.word_drop]
             )
             turns = perturb_op(turns)
+        elif "shuffle" in self.opt['perturb']:
+            turns = self.shuffle(turns)
+        elif "reverse_utr_order" in self.opt['perturb']:
+            turns = self.reverse_utr_order(turns)
+        elif "only_last" in self.opt['perturb']:
+            turns = self.only_last(turns)
         elif "worddrop" in self.opt['perturb']:
             turns = self.word_drop(turns)
         elif "drop" in self.opt['perturb']:
@@ -83,6 +89,16 @@ class Perturb(object):
             [x for idx, x in enumerate(turns[pos].split()) if word_mask[idx] == 0]
         )
         return turns[:pos] + [modified_turn] + turns[pos:]
+
+    def only_last(self, turns):
+        return [turns[-1]]
+
+    def reverse_utr_order(self, turns):
+        return turns[::-1]
+
+    def shuffle(self, turns):
+        np.random.shuffle(turns)
+        return turns
 
     def _get_turns(self, act):
         return act['text'].split('\n')

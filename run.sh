@@ -22,19 +22,31 @@ if [ "$2" = "s2s" ]
 then
     echo "MODELTYPE: "$2
     COMMON_ARGS=$GPU_ARGS" -m seq2seq"
-    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 --bidirectional true"
-    TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000 --bidirectional true"
+    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
+    TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
+if [ "$2" = "s2s_bidir" ]
+then
+    echo "MODELTYPE: "$2
+    COMMON_ARGS=$GPU_ARGS" -m seq2seq --bidirectional true"
+    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
+    TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
 elif [ "$2" = "s2s_att_general" ]
 then
     echo "MODELTYPE: "$2
     COMMON_ARGS=$GPU_ARGS" -m seq2seq -att general"
-    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 --bidirectional true"
-    TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000 --bidirectional true"
+    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
+    TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
+elif [ "$2" = "s2s_att_general_bidir" ]
+then
+    echo "MODELTYPE: "$2
+    COMMON_ARGS=$GPU_ARGS" -m seq2seq -att general --bidirectional true"
+    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
+    TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
 elif [ "$2" = "transformer" ]
 then
     echo "MODELTYPE: "$2
     COMMON_ARGS=$GPU_ARGS" -m fairseq -bs 32 --arch transformer --share-all-embeddings"
-    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1" 
+    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True" 
     TRAIN_MODEL_ARGS=$COMMON_ARGS" -bs 32 -vmt loss -eps 25 -veps 1 -stim 600 --optimizer adam --clip-norm 0.0 --lr-scheduler inverse_sqrt --warmup-init-lr 1e-07 --warmup-updates 4000  --lr 0.0005 --min-lr 1e-09 --dropout 0.3 --weight-decay 0.0" 
 else
     echo "INVALID modeltype : "$2" Supported : s2s, s2s_att_general, transformer"
@@ -66,6 +78,15 @@ then
             LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_no_perturb.txt"
             python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "None" --datatype $DATATYPE > $LOGFILE
             grep FINAL_REPORT $LOGFILE
+
+            for PERTURB_TYPE in "only_last" "shuffle" "reverse_utr_order"
+            do
+                echo "---------------------"
+                echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE
+                LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE".txt"
+                python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE --datatype $DATATYP > $LOGFILE
+                grep FINAL_REPORT $LOGFILE
+            done
 
             for PERTURB_TYPE in "swap" "repeat" "drop"
             do
