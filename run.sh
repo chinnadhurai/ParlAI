@@ -27,7 +27,7 @@ then
 if [ "$2" = "s2s_bidir" ]
 then
     echo "MODELTYPE: "$2
-    COMMON_ARGS=$GPU_ARGS" -m seq2seq --bidirectional true"
+    COMMON_ARGS=$GPU_ARGS" -m seq2seq --bidirectional true --hiddensize 256"
     EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
     TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
 elif [ "$2" = "s2s_att_general" ]
@@ -39,7 +39,7 @@ then
 elif [ "$2" = "s2s_att_general_bidir" ]
 then
     echo "MODELTYPE: "$2
-    COMMON_ARGS=$GPU_ARGS" -m seq2seq -att general --bidirectional true"
+    COMMON_ARGS=$GPU_ARGS" -m seq2seq -att general --bidirectional true --hiddensize 256"
     EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
     TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
 elif [ "$2" = "transformer" ]
@@ -88,7 +88,7 @@ then
                 grep FINAL_REPORT $LOGFILE
             done
 
-            for PERTURB_TYPE in "swap" "repeat" "drop"
+            for PERTURB_TYPE in "swap" "repeat" "drop" "worddrop" "verbdrop" "noundrop"
             do
                 for PERTURB_LOC in "first" "last" "random"
                 do

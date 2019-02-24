@@ -1,7 +1,12 @@
 # Perutbation operations
 import numpy as np
 np.random.seed(seed=300)
+import spacy
 
+# Load English tokenizer, tagger, parser, NER and word vectors
+nlp = spacy.load(
+    'en_core_web_sm', parser=False, entity=False, matcher=False, add_vectors=False, tagger=True
+)
 
 class Perturb(object):
     def __init__(self, opt):
@@ -30,6 +35,10 @@ class Perturb(object):
             turns = self.only_last(turns)
         elif "worddrop" in self.opt['perturb']:
             turns = self.word_drop(turns)
+        elif "verbdrop" in self.opt['perturb']:
+            turns = self.verb_drop(turns)
+        elif "noundrop" in self.opt['perturb']:
+            turns = self.noun_drop(turns)
         elif "drop" in self.opt['perturb']:
             turns = self.drop(turns)
         elif "swap" in self.opt['perturb']:
@@ -79,16 +88,28 @@ class Perturb(object):
         elif "last" in self.opt['perturb']:
             pos = len(turns) - 1
         else:
-            pos = np.random.randint(len(turns))
+            pos = 'all'
 
-        # Tune word dropout prob?
-        word_mask = np.random.binomial(
-            size=len(turns[pos].split()), n=1, p=0.3
-        )
-        modified_turn = ' '.join(
-            [x for idx, x in enumerate(turns[pos].split()) if word_mask[idx] == 0]
-        )
-        return turns[:pos] + [modified_turn] + turns[pos:]
+        if pos == 'all':
+            modified_turns = []
+            for turn in turns:
+                word_mask = np.random.binomial(
+                    size=len(turn.split()), n=1, p=0.3
+                )
+                modified_turn = ' '.join(
+                    [x for idx, x in enumerate(turn.split()) if word_mask[idx] == 0]
+                )
+                modified_turns.append(modified_turn)
+            return modified_turns
+        else:
+            # Tune word dropout prob?
+            word_mask = np.random.binomial(
+                size=len(turns[pos].split()), n=1, p=0.3
+            )
+            modified_turn = ' '.join(
+                [x for idx, x in enumerate(turns[pos].split()) if word_mask[idx] == 0]
+            )
+            return turns[:pos] + [modified_turn] + turns[pos:]
 
     def only_last(self, turns):
         return [turns[-1]]
@@ -99,6 +120,48 @@ class Perturb(object):
     def shuffle(self, turns):
         np.random.shuffle(turns)
         return turns
+
+    def verb_drop(self, turns):
+        if "first" in self.opt['perturb']:
+            pos = 0
+        elif "last" in self.opt['perturb']:
+            pos = len(turns) - 1
+        else:
+            pos = 'all'
+
+        if pos == 'all':
+            modified_turns = []
+            for turn in turns:
+                processed_turn = nlp(turn)
+                modified_turn = ' '.join([x.text for x in processed_turn if x.pos_ != 'VERB'])
+                modified_turns.append(modified_turn)
+            return modified_turns
+        else:
+            turn = turns[pos]
+            processed_turn = nlp(turn)
+            modified_turn = ' '.join([x.text for x in processed_turn if x.pos_ != 'VERB'])
+            return turns[:pos] + [modified_turn] + turns[pos:]
+
+    def noun_drop(self, turns):
+        if "first" in self.opt['perturb']:
+            pos = 0
+        elif "last" in self.opt['perturb']:
+            pos = len(turns) - 1
+        else:
+            pos = 'all'
+
+        if pos == 'all':
+            modified_turns = []
+            for turn in turns:
+                processed_turn = nlp(turn)
+                modified_turn = ' '.join([x.text for x in processed_turn if x.pos_ != 'NOUN'])
+                modified_turns.append(modified_turn)
+            return modified_turns
+        else:
+            turn = turns[pos]
+            processed_turn = nlp(turn)
+            modified_turn = ' '.join([x.text for x in processed_turn if x.pos_ != 'NOUN'])
+            return turns[:pos] + [modified_turn] + turns[pos:]
 
     def _get_turns(self, act):
         return act['text'].split('\n')
