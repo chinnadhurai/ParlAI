@@ -7,6 +7,7 @@ class Perturb(object):
     def __init__(self, opt):
         self.opt = opt
         self.splitter = "\n"
+        print("Perturber created !")
 
     def perturb(self, act):
         if self.opt['perturb'] == 'None':

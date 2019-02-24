@@ -258,7 +258,7 @@ class DialogPartnerWorld(World):
         if self.perturber:
             agents[1].observe(validate(acts[0]), self.perturber)
         else:
-             agents[1].observe(validate(acts[0]))
+            agents[1].observe(validate(acts[0]))
         acts[1] = agents[1].act()
         agents[0].observe(validate(acts[1]))
         self.update_counters()
