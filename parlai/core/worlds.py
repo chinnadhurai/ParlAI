@@ -242,11 +242,12 @@ class DialogPartnerWorld(World):
             self.agents = agents
         self.acts = [None] * len(self.agents)
         self.opt = opt
-        self.perturber = Perturb(opt)
-        self.num_acts_so_far = 0
-        if self.opt["skip_first_turn"]:
-            self.acts[0] = self.agents[0].act()
-            self.agents[1].observe(validate(self.acts[0]))
+        self.perturber = None
+        if "skip_first_turn" in self.opt:
+            self.perturber = Perturb(opt)
+            if self.opt["skip_first_turn"]:
+                self.acts[0] = self.agents[0].act()
+                self.agents[1].observe(validate(self.acts[0]))
         
 
     def parley(self):
@@ -254,14 +255,18 @@ class DialogPartnerWorld(World):
         acts = self.acts
         agents = self.agents
         acts[0] = agents[0].act()
-        agents[1].observe(validate(acts[0]), self.perturber)
+        if self.perturber:
+            agents[1].observe(validate(acts[0]), self.perturber)
+        else:
+             agents[1].observe(validate(acts[0]))
         acts[1] = agents[1].act()
         agents[0].observe(validate(acts[1]))
         self.update_counters()
-        if self.opt["skip_first_turn"]:
-            if self.episode_done():
-                self.acts[0] = self.agents[0].act()
-                self.agents[1].observe(validate(self.acts[0]))
+        if "skip_first_turn" in self.opt:
+            if self.opt["skip_first_turn"]:
+                if self.episode_done():
+                    self.acts[0] = self.agents[0].act()
+                    self.agents[1].observe(validate(self.acts[0]))
                 
 
     def episode_done(self):
