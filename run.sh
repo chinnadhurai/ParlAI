@@ -88,7 +88,7 @@ then
                 grep FINAL_REPORT $LOGFILE
             done
 
-            for PERTURB_TYPE in "swap" "repeat" "drop" "worddrop" "verbdrop" "noundrop"
+            for PERTURB_TYPE in "swap" "repeat" "drop" "worddrop" "verbdrop" "noundrop" "wordshuf" "wordreverse"
             do
                 for PERTURB_LOC in "first" "last" "random"
                 do

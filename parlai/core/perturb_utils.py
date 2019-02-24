@@ -35,6 +35,10 @@ class Perturb(object):
             turns = self.only_last(turns)
         elif "worddrop" in self.opt['perturb']:
             turns = self.word_drop(turns)
+        elif "wordshuf" in self.opt['perturb']:
+            turns = self.word_shuf(turns)
+        elif "wordreverse" in self.opt['perturb']:
+            turns = self.word_reverse(turns)
         elif "verbdrop" in self.opt['perturb']:
             turns = self.verb_drop(turns)
         elif "noundrop" in self.opt['perturb']:
@@ -110,6 +114,48 @@ class Perturb(object):
                 [x for idx, x in enumerate(turns[pos].split()) if word_mask[idx] == 0]
             )
             return turns[:pos] + [modified_turn] + turns[pos:]
+
+    def word_shuf(self, turns, pos=None):
+        if "first" in self.opt['perturb']:
+            pos = 0
+        elif "last" in self.opt['perturb']:
+            pos = len(turns) - 1
+        else:
+            pos = 'all'
+
+        if pos == 'all':
+            modified_turns = []
+            for turn in turns:
+                turn = turn.split()
+                np.random.shuffle(turn)
+                modified_turns.append(' '.join(turn))
+            return modified_turns
+        else:
+            # Tune word dropout prob?
+            turn = turns[pos]
+            turn = turn.split()
+            np.random.shuffle(turn)
+            return turns[:pos] + [' '.join(turn)] + turns[pos:]
+
+    def word_reverse(self, turns, pos=None):
+        if "first" in self.opt['perturb']:
+            pos = 0
+        elif "last" in self.opt['perturb']:
+            pos = len(turns) - 1
+        else:
+            pos = 'all'
+
+        if pos == 'all':
+            modified_turns = []
+            for turn in turns:
+                turn = turn.split()[::-1]
+                modified_turns.append(' '.join(turn))
+            return modified_turns
+        else:
+            # Tune word dropout prob?
+            turn = turns[pos]
+            turn = turn.split()[::-1]
+            return turns[:pos] + [turn] + turns[pos:]
 
     def only_last(self, turns):
         return [turns[-1]]
