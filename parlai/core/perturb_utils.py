@@ -22,12 +22,7 @@ class Perturb(object):
             print("less than 3 turns")
             print("turns : {}".format(act['text']))
             return act
-        if 'random' in self.opt['perturb']:
-            perturb_op = np.random.choice(
-                [self.swap, self.drop, self.repeat, self.word_drop]
-            )
-            turns = perturb_op(turns)
-        elif "shuffle" in self.opt['perturb']:
+        if "shuffle" in self.opt['perturb']:
             turns = self.shuffle(turns)
         elif "reverse_utr_order" in self.opt['perturb']:
             turns = self.reverse_utr_order(turns)
@@ -155,7 +150,7 @@ class Perturb(object):
             # Tune word dropout prob?
             turn = turns[pos]
             turn = turn.split()[::-1]
-            return turns[:pos] + [turn] + turns[pos:]
+            return turns[:pos] + [" ".join(turn)] + turns[pos:]
 
     def only_last(self, turns):
         return [turns[-1]]
