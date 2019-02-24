@@ -7,6 +7,7 @@ class Perturb(object):
     def __init__(self, opt):
         self.opt = opt
         self.splitter = "\n"
+        print("Perturber created !")
 
     def perturb(self, act):
         if self.opt['perturb'] == 'None':
@@ -28,7 +29,7 @@ class Perturb(object):
             turns = self.repeat(turns)
         else:
             assert "Invalid perturb mode : {}. Valid : random, drop, swap, repeat".format(self.opt['perturb'])
-        
+
         self._update_act(turns, act)
         return act
 

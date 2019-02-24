@@ -246,7 +246,6 @@ class DialogPartnerWorld(World):
         if "skip_first_turn" in self.opt:
             self.perturber = Perturb(opt)
             if self.opt["skip_first_turn"]:
-                print("Perturbing ON ...")
                 self.acts[0] = self.agents[0].act()
                 self.agents[1].observe(validate(self.acts[0]))
         
