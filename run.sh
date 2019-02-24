@@ -3,6 +3,7 @@
 
 LOGDIR="perturb_log_files/"
 SAVEDIR="save_dir/"
+GPU="0"
 mkdir -p $LOGDIR
 
 if [ -z "$1" ]
@@ -16,20 +17,21 @@ else
     RUN_MODE=$1
 fi
 
+GPU_ARGS=" --gpu "$GPU
 if [ "$2" = "s2s" ]
 then
     echo "MODELTYPE: "$2
-    EVAL_MODEL_ARGS="-m seq2seq"
+    EVAL_MODEL_ARGS=$GPU_ARGS" -m seq2seq"
     TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
 elif [ "$2" = "s2s_att_general" ]
 then
     echo "MODELTYPE: "$2
-    EVAL_MODEL_ARGS="-m seq2seq -att general"
+    EVAL_MODEL_ARGS=$GPU_ARGS" -m seq2seq -att general"
     TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
 elif [ "$2" = "transformer" ]
 then
     echo "MODELTYPE: "$2
-    EVAL_MODEL_ARGS="-m fairseq -bs 32 --arch transformer --share-all-embeddings"
+    EVAL_MODEL_ARGS=$GPU_ARGS" -m fairseq -bs 32 --arch transformer --share-all-embeddings"
     TRAIN_MODEL_ARGS=$EVAL_MODEL_ARGS" -vmt loss -eps 25 -veps 1 -stim 600 --optimizer adam --clip-norm 0.0 --lr-scheduler inverse_sqrt --warmup-init-lr 1e-07 --warmup-updates 4000  --lr 0.0005 --min-lr 1e-09 --dropout 0.3 --weight-decay 0.0" 
 else
     echo "INVALID modeltype : "$2" Supported : s2s, s2s_att_general, transformer"
@@ -78,5 +80,10 @@ then
 elif [ $RUN_MODE = "train" ]
 then
     echo $TRAIN_MODEL_ARGS
-    python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS --adam-betas '(0.9, 0.98)'  
+    python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS --adam-betas '(0.9, 0.98)'
+else
+    echo "Invalid Run mode provided. Supported : train, perturb"
+    echo "Example train command : sh run.sh train <model_type> <dataset>"
+    echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
+    exit 0
 fi
