@@ -24,7 +24,7 @@ then
     COMMON_ARGS=$GPU_ARGS" -m seq2seq"
     EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True"
     TRAIN_MODEL_ARGS=$COMMON_ARGS" -vmt loss -eps 60 -veps 1 -stim 600 -bs 32 --optimizer adam --lr-scheduler invsqrt -lr 0.005 --dropout 0.3 --warmup-updates 4000"
-if [ "$2" = "s2s_bidir" ]
+elif [ "$2" = "s2s_bidir" ]
 then
     echo "MODELTYPE: "$2
     COMMON_ARGS=$GPU_ARGS" -m seq2seq --bidirectional true --hiddensize 256"
