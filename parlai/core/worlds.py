@@ -246,6 +246,7 @@ class DialogPartnerWorld(World):
         if "skip_first_turn" in self.opt:
             self.perturber = Perturb(opt)
             if self.opt["skip_first_turn"]:
+                print("Skipping first turn....")
                 self.acts[0] = self.agents[0].act()
                 self.agents[1].observe(validate(self.acts[0]))
         
@@ -262,6 +263,13 @@ class DialogPartnerWorld(World):
         acts[1] = agents[1].act()
         agents[0].observe(validate(acts[1]))
         self.update_counters()
+        if "skip_first_turn" in self.opt:
+            if self.opt["skip_first_turn"]:
+                if self.episode_done():
+                    self.acts[0] = self.agents[0].act()
+                    self.agents[1].observe(validate(self.acts[0]))
+
+    def skip_first_turn(self):
         if "skip_first_turn" in self.opt:
             if self.opt["skip_first_turn"]:
                 if self.episode_done():
@@ -613,6 +621,10 @@ class BatchWorld(World):
         self.batch_observations = [None] * len(self.world.get_agents())
         self.first_batch = None
         self.acts = [None] * len(self.world.get_agents())
+        self.perturber = None
+        if "skip_first_turn" in self.opt:
+            if self.opt["skip_first_turn"]:
+                self.perturber = Perturb(opt)
 
     def batch_observe(self, index, batch_actions, index_acting):
         batch_observations = []
@@ -631,7 +643,11 @@ class BatchWorld(World):
                 if index == index_acting:
                     return None  # don't observe yourself talking
                 observation = validate(batch_actions[i])
-            observation = agents[index].observe(observation)
+            if agents[index].__class__.__name__ != 'DefaultTeacher' and self.perturber:
+                observation = agents[index].observe(observation, self.perturber)
+            else:
+                observation = agents[index].observe(observation)
+            
             if observation is None:
                 raise ValueError('Agents should return what they observed.')
             batch_observations.append(observation)
@@ -641,6 +657,7 @@ class BatchWorld(World):
         # Given batch observation, do update for agents[index].
         # Call update on agent
         a = self.world.get_agents()[agent_idx]
+        
         if (hasattr(a, 'batch_act') and
                 not (hasattr(a, 'use_batch_act') and not a.use_batch_act)):
             batch_actions = a.batch_act(batch_observation)
@@ -681,7 +698,11 @@ class BatchWorld(World):
                 obs = self.batch_observe(other_index, batch_act, agent_idx)
                 if obs is not None:
                     batch_observations[other_index] = obs
+
         self.update_counters()
+        for w in self.worlds:
+            if hasattr(w, 'skip_first_turn'):
+                w.skip_first_turn()
 
     def display(self):
         s = ("[--batchsize " + str(len(self.worlds)) + "--]\n")
