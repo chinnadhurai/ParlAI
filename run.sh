@@ -45,9 +45,9 @@ then
 elif [ "$2" = "transformer" ]
 then
     echo "MODELTYPE: "$2
-    COMMON_ARGS=$GPU_ARGS" -m fairseq -bs 32 --arch transformer --share-all-embeddings"
-    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 1 -d True" 
-    TRAIN_MODEL_ARGS=$COMMON_ARGS" -bs 32 -vmt loss -eps 25 -veps 1 -stim 600 --optimizer adam --clip-norm 0.0 --lr-scheduler inverse_sqrt --warmup-init-lr 1e-07 --warmup-updates 4000  --lr 0.0005 --min-lr 1e-09 --dropout 0.3 --weight-decay 0.0" 
+    COMMON_ARGS=$GPU_ARGS" -m transformer/generator -bs 64"
+    EVAL_MODEL_ARGS=$COMMON_ARGS" -bs 64 -d True" 
+    TRAIN_MODEL_ARGS=$COMMON_ARGS" --optimizer adam -lr 0.001 --lr-scheduler invsqrt --warmup-updates 4000 -eps 25 -veps 1 -stim 600" 
 else
     echo "INVALID modeltype : "$2" Supported : s2s, s2s_att_general, transformer"
     echo "Example train command : sh run.sh train <model_type> <dataset>"
