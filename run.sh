@@ -8,9 +8,10 @@ mkdir -p $LOGDIR
 
 if [ -z "$1" ]
 then
-    echo "No Run mode provided. Supported : train, perturb"
+    echo "No Run mode provided. Supported : train, perturb, last_few_only"
     echo "Example train command : sh run.sh train <model_type> <dataset>"
     echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
+    echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset>"
     exit 0
 
 else
@@ -66,7 +67,26 @@ else
     MF=$SAVEDIR"/model_"$3"_"$2
 fi
 
-if [ $RUN_MODE = "perturb" ]
+if [ $RUN_MODE = "last_few_only" ]
+then
+    echo "MODE: "$RUN_MODE
+    for MODEL_TYPE in $2
+    do
+        for DATATYPE in "test" #valid
+        do
+            for NUM_TURNS_TO_RETAIN in 1 2 3 4 5 6
+            do
+                echo "---------------------"
+                echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_last_few_only__"$NUM_TURNS_TO_RETAIN
+                LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_last_few_only__"$NUM_TURNS_TO_RETAIN".txt"
+                python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "last_few_only__"$NUM_TURNS_TO_RETAIN --datatype $DATATYPE > $LOGFILE
+                grep FINAL_REPORT $LOGFILE
+            
+            done
+        done
+    done
+
+elif [ $RUN_MODE = "perturb" ]
 then
     echo "MODE : "$RUN_MODE
     for MODEL_TYPE in $2
@@ -106,8 +126,9 @@ then
     echo $TRAIN_MODEL_ARGS
     python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS
 else
-    echo "Invalid Run mode provided. Supported : train, perturb"
+    echo "Invalid Run mode provided. Supported : train, perturb, last_few_only"
     echo "Example train command : sh run.sh train <model_type> <dataset>"
     echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
+    echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset>"
     exit 0
 fi

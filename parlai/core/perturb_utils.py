@@ -22,7 +22,10 @@ class Perturb(object):
             print("less than 3 turns")
             print("turns : {}".format(act['text']))
             return act
-        if "shuffle" in self.opt['perturb']:
+        if "last_few_only" in self.opt['perturb']:
+            max_num_turns_to_retain = int(self.opt['perturb'].split("__")[-1])
+            turns = self.last_few_only(turns, max_num_turns_to_retain)
+        elif "shuffle" in self.opt['perturb']:
             turns = self.shuffle(turns)
         elif "reverse_utr_order" in self.opt['perturb']:
             turns = self.reverse_utr_order(turns)
@@ -204,8 +207,20 @@ class Perturb(object):
             modified_turn = ' '.join([x.text for x in processed_turn if x.pos_ != 'NOUN'])
             return turns[:pos] + [modified_turn] + turns[pos:]
 
+    def last_few_only(self, turns, max_num_turns_to_retain):
+        return turns[-max_num_turns_to_retain:]
+
     def _get_turns(self, act):
-        return act['text'].split('\n')
+        turns = self._filter_out_personas(act['text'].split('\n'))
+        return turns
 
     def _update_act(self, turns, act):
-        act['text'] = self.splitter.join(turns)
+        act['text'] = self.splitter.join(self._get_persona_turns() + turns)
+
+    def _filter_out_personas(self, turns):
+        self.persona_turns = [turn for turn in turns if "your persona: " in turn]
+        return [turn for turn in turns if "your persona: " not in turn]
+    
+    def _get_persona_turns(self):
+        return self.persona_turns
+        
