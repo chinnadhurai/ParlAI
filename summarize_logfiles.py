@@ -18,6 +18,7 @@ class Converter(object):
         self.logdir = args.logdir
         self.filenames = [join(self.logdir, f) for f in listdir(self.logdir) if isfile(join(self.logdir, f)) and ".txt" in f]
         self.valid_metrics = ['ppl', 'f1', 'bleu']
+        self.metric_output_types = ["exact", "delta", "percent"]
         self.parsed_data = {}
         assert self.filenames
         for filename in self.filenames:
@@ -28,7 +29,8 @@ class Converter(object):
             lines = [line.strip() for line in f.readlines()]
 
         data = {}
-        data["metric_values"] = []
+        for metric_output_type in self.metric_output_types:
+            data["metric_{}_values".format(metric_output_type)] = []
         data["metric_types"] = []
         
         lid = 0
@@ -41,8 +43,21 @@ class Converter(object):
                 metrics_str = lines[lid+1].split("FINAL_REPORT: ")[-1]
                 metrics = ast.literal_eval(metrics_str)
                 for metric_type in self.valid_metrics:
-                    data["metric_values"].append("{0:.2f}".format(metrics[metric_type]))
+                    data["metric_exact_values"].append("{0:.2f}".format(metrics[metric_type]))
                     data["metric_types"].append("{}_{}".format(perturb_type, metric_type))
+                    if "NoPerturb" in perturb_type:
+                        data["metric_noperturb_{}".format(metric_type)] = metrics[metric_type]
+                    
+                    delta_change = metrics[metric_type] - data["metric_noperturb_{}".format(metric_type)]
+                    try:
+                        percent_change = (delta_change * 100.0) / data["metric_noperturb_{}".format(metric_type)]
+                    except:
+                        percent_change = 0.0
+                        
+                    data["metric_percent_values"].append("{0:.2f}".format(percent_change))
+                    data["metric_delta_values"].append("{0:.2f}".format(delta_change))
+                        
+                        
             lid += 1
         return data
 
@@ -55,16 +70,17 @@ class Converter(object):
 
     def convert_to_csv(self):
         target_filename = join(self.logdir, "logs.csv")
-        with open(target_filename, 'w') as f:
-            for i, filename in enumerate(self.filenames):
-                parsed_data = self.parsed_data[filename]
-                if i == 0:
-                    line1 = "Model, " + " , ".join(parsed_data["metric_types"])
-                    f.write("{}\n".format(line1))
-                line = "{}, ".format(parsed_data['modeltype']) + " , ".join(parsed_data["metric_values"])
-                f.write("{}\n".format(line))
-                print("Writing line {}".format(i+1))
-        print("Done writing to {}".format(target_filename))
+        with open(target_filename, 'w') as f:   
+            for metric_output_type in self.metric_output_types:
+                for i, filename in enumerate(self.filenames):
+                    parsed_data = self.parsed_data[filename]
+                    if i == 0:
+                        line1 = "Model({}), ".format(metric_output_type) + " , ".join(parsed_data["metric_types"])
+                        f.write("{}\n".format(line1))
+                    line = "{}, ".format(parsed_data['modeltype']) + " , ".join(parsed_data["metric_{}_values".format(metric_output_type)])
+                    f.write("{}\n".format(line))
+                    print("Writing line {}".format(i+1))
+            print("Done writing to {}".format(target_filename))
                     
 if __name__ == "__main__":
     converter = Converter(args)
