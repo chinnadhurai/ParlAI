@@ -18,10 +18,8 @@ class DefaultTeacher(DialogTeacher):
         self.datatype = opt['datatype']
         build(opt)
 
-        if not opt['datatype'].startswith('train'):
-            raise RuntimeError('MutualFriends only has a training set.')
         opt['datafile'] = os.path.join(opt['datapath'], 'MutualFriends',
-                                       'data.json')
+                                       '{}.json'.format(opt['datatype']))
         self.id = 'mutualfriends'
         super().__init__(opt, shared)
 
