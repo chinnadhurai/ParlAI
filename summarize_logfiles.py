@@ -16,13 +16,16 @@ class Converter(object):
     def __init__(self, args):
         self.args = args
         self.logdir = args.logdir
-        self.filenames = [join(self.logdir, f) for f in listdir(self.logdir) if isfile(join(self.logdir, f)) and ".txt" in f]
+        self.filenames = [join(self.logdir, f) for f in listdir(self.logdir) if isfile(join(self.logdir, f)) and ".txt" in f and "last_few_only" not in f]
+        self.last_few_only_filenames = [join(self.logdir, f) for f in listdir(self.logdir) if isfile(join(self.logdir, f)) and ".txt" in f and "last_few_only" in f]
+
         self.valid_metrics = ['ppl', 'f1', 'bleu']
         self.metric_output_types = ["exact", "delta", "percent"]
         self.parsed_data = {}
         assert self.filenames
-        for filename in self.filenames:
+        for filename in self.filenames + self.last_few_only_filenames:
             self.parsed_data[filename] = self.parse(filename)
+            
 
     def parse(self, filename):
         with open(filename, 'r') as f:
@@ -64,15 +67,16 @@ class Converter(object):
     def convert(self):
         if self.args.target_filetype == "csv":
             print("Conversting to a csv file...")
-            self.convert_to_csv()
+            self.convert_to_csv(self.filenames, "logs_for_table.csv")
+            self.convert_to_csv(self.last_few_only_filenames, "logs_for_plot.csv")
         else:
             assert "unsupported type : {}. Valid : csv".format(self.args["target_filetype"])
 
-    def convert_to_csv(self):
-        target_filename = join(self.logdir, "logs.csv")
+    def convert_to_csv(self, filenames, target_filename):
+        target_filename = join(self.logdir, target_filename)
         with open(target_filename, 'w') as f:   
             for metric_output_type in self.metric_output_types:
-                for i, filename in enumerate(self.filenames):
+                for i, filename in enumerate(filenames):
                     parsed_data = self.parsed_data[filename]
                     if i == 0:
                         line1 = "Model({}), ".format(metric_output_type) + " , ".join(parsed_data["metric_types"])
