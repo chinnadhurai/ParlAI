@@ -19,17 +19,18 @@ class Converter(object):
         self.filenames = [join(self.logdir, f) for f in listdir(self.logdir) if isfile(join(self.logdir, f)) and ".txt" in f and "last_few_only" not in f]
         self.last_few_only_filenames = [join(self.logdir, f) for f in listdir(self.logdir) if isfile(join(self.logdir, f)) and ".txt" in f and "last_few_only" in f]
 
-        self.valid_metrics = ['ppl', 'f1', 'bleu']
+        self.valid_metrics = ['ppl'] #['f1', 'bleu']
         self.metric_output_types = ["exact", "delta"]
-        #self.desired_perturb_types = None
-        self.desired_perturb_types = ["only_last", "drop_first", "drop_last", "shuffle", "reverse_utr_order", "verbdrop_random", "noundrop_random", "worddrop_random", "wordshuf_random", "wordreverse_random"]
+        desired_perturb_types = ["only_last", "drop_first", "drop_last", "shuffle", "reverse_utr_order", "verbdrop_random", "noundrop_random", "worddrop_random", "wordshuf_random", "wordreverse_random"]
         self.parsed_data = {}
         assert self.filenames
-        for filename in self.filenames + self.last_few_only_filenames:
+        for filename in self.filenames:
+            self.parsed_data[filename] = self.parse(filename, desired_perturb_types)
+        for filename in self.last_few_only_filenames:
             self.parsed_data[filename] = self.parse(filename)
             
 
-    def parse(self, filename):
+    def parse(self, filename, desired_perturb_types=None):
         with open(filename, 'r') as f:
             lines = [line.strip() for line in f.readlines()]
 
@@ -44,8 +45,8 @@ class Converter(object):
                 data['modeltype'] = lines[lid].split(":")[-1].strip()
             if "CONFIG :" in lines[lid]:
                 perturb_type = lines[lid].split("test_")[-1]
-                if self.desired_perturb_types:
-                    if perturb_type not in self.desired_perturb_types and "NoPerturb" not in perturb_type:
+                if desired_perturb_types:
+                    if perturb_type not in desired_perturb_types and "NoPerturb" not in perturb_type:
                         lid += 1
                         continue
                 assert "FINAL_REPORT: " in lines[lid+1]
