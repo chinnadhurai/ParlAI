@@ -74,6 +74,11 @@ then
     do
         for DATATYPE in "test" #valid
         do
+	   echo "---------------------"
+	   echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_NoPerturb"
+	   LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_no_perturb.txt"
+	   grep FINAL_REPORT $LOGFILE
+
             for NUM_TURNS_TO_RETAIN in 1 2 3 4 5 6
             do
                 echo "---------------------"
