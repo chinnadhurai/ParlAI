@@ -19,7 +19,7 @@ class DefaultTeacher(DialogTeacher):
         build(opt)
 
         opt['datafile'] = os.path.join(opt['datapath'], 'MutualFriends',
-                                       '{}.json'.format(opt['datatype']))
+                                       '{}.json'.format(opt['datatype'].split(':')[0]))
         self.id = 'mutualfriends'
         super().__init__(opt, shared)
 
