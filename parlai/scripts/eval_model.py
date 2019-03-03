@@ -82,7 +82,10 @@ def eval_model(opt, printargs=None, print_parser=None):
     cnt = 0
     while not world.epoch_done():
         cnt += opt.get('batchsize', 1)
-        world.parley()
+        try:
+            world.parley()
+        except:
+            continue
         if opt['display_examples']:
             print(world.display() + "\n~~")
         if log_time.time() > log_every_n_secs:
