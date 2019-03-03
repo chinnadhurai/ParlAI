@@ -99,25 +99,13 @@ then
             python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "None" --datatype $DATATYPE > $LOGFILE
             grep FINAL_REPORT $LOGFILE
 
-            for PERTURB_TYPE in "only_last" "shuffle" "reverse_utr_order"
+            for PERTURB_TYPE in "only_last" "shuffle" "reverse_utr_order" "drop_first" "drop_last" "worddrop_random" "verbdrop_random" "noundrop_random" "wordshuf_random" "wordreverse_random"
             do
                 echo "---------------------"
                 echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE
                 LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE".txt"
                 python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE --datatype $DATATYPE > $LOGFILE
                 grep FINAL_REPORT $LOGFILE
-            done
-
-            for PERTURB_TYPE in "swap" "repeat" "drop" "worddrop" "verbdrop" "noundrop" "wordshuf" "wordreverse"
-            do
-                for PERTURB_LOC in "first" "last" "random"
-                do
-                    echo "---------------------"
-                    echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE"_"$PERTURB_LOC
-                    LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE"_"$PERTURB_LOC".txt"
-                    python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE"_"$PERTURB_LOC --datatype $DATATYPE > $LOGFILE
-                    grep FINAL_REPORT $LOGFILE
-                done
             done
         done 
     done
