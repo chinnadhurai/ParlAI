@@ -14,7 +14,7 @@ fi
 
 echo "RUN : "$RUN_ID    
 LOGDIR="perturb_log_files_"$RUN_ID"/"
-SAVEDIR="save_dir_"$RUN_ID"/"
+SAVEDIR="save_dir_run_"$RUN_ID"/"
 
 
 GPU="0"
