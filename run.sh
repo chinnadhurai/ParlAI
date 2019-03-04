@@ -1,17 +1,31 @@
 #!/bin/sh
 
+if [ -z "$4" ]
+then
+        echo "No Run id provided. Suported : 1,2,3,4,5,6"
+        echo "Example train command : sh run.sh train <model_type> <dataset> <run_id>"
+        echo "Example perturb command : sh run.sh perturb <model_type> <dataset> <run_id>"
+        echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset> <run_id>"
+        exit 0
+else
+        RUN_ID=$4
 
-LOGDIR="perturb_log_files/"
-SAVEDIR="save_dir/"
+fi
+
+echo "RUN : "$RUN_ID    
+LOGDIR="perturb_log_files_"$RUN_ID"/"
+SAVEDIR="save_dir_"$RUN_ID"/"
+
+
 GPU="0"
 mkdir -p $LOGDIR
 
 if [ -z "$1" ]
 then
     echo "No Run mode provided. Supported : train, perturb, last_few_only"
-    echo "Example train command : sh run.sh train <model_type> <dataset>"
-    echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
-    echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset>"
+    echo "Example train command : sh run.sh train <model_type> <dataset> <run_id>"
+    echo "Example perturb command : sh run.sh perturb <model_type> <dataset> <run_id>"
+    echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset> <run_id>"
     exit 0
 
 else
@@ -51,7 +65,7 @@ then
     TRAIN_MODEL_ARGS=$COMMON_ARGS" -bs 64 --optimizer adam -lr 0.001 --lr-scheduler invsqrt --warmup-updates 4000 -eps 25 -veps 1 -stim 200" 
 else
     echo "INVALID modeltype : "$2" Supported : s2s, s2s_att_general, transformer"
-    echo "Example train command : sh run.sh train <model_type> <dataset>"
+    echo "Example train command : sh run.sh train <model_type> <dataset> <run_id>"
     echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
     exit 0
 fi
@@ -59,8 +73,8 @@ fi
 if [ -z "$3" ]
 then
     echo "No Dataset type specified supplied"
-    echo "Example train command : sh run.sh train <model_type> <dataset>"
-    echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
+    echo "Example train command : sh run.sh train <model_type> <dataset> <run_id>"
+    echo "Example perturb command : sh run.sh perturb <model_type> <dataset> <run_id>"
     exit 0
 else
     DATASET=$3
@@ -120,8 +134,8 @@ then
     python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS
 else
     echo "Invalid Run mode provided. Supported : train, perturb, last_few_only"
-    echo "Example train command : sh run.sh train <model_type> <dataset>"
-    echo "Example perturb command : sh run.sh perturb <model_type> <dataset>"
-    echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset>"
+    echo "Example train command : sh run.sh train <model_type> <dataset> <run_id>"
+    echo "Example perturb command : sh run.sh perturb <model_type> <dataset> <run_id>"
+    echo "Example perturb command : sh run.sh last_few_only <model_type> <dataset> <run_id>"
     exit 0
 fi
