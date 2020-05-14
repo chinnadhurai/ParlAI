@@ -3,9 +3,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
-from parlai.core.teachers import DialogTeacher
-from parlai.core.agents import MultiTaskTeacher
+from parlai.core.teachers import DialogTeacher, MultiTaskTeacher
 from .build import build
 
 import copy
@@ -16,8 +14,10 @@ import os
 def _path(opt):
     build(opt)
 
-    return (os.path.join(opt['datapath'], 'TriviaQA', 'qa'),
-            os.path.join(opt['datapath'], 'TriviaQA', 'evidence'))
+    return (
+        os.path.join(opt['datapath'], 'TriviaQA', 'qa'),
+        os.path.join(opt['datapath'], 'TriviaQA', 'evidence'),
+    )
 
 
 class WebTeacher(DialogTeacher):
@@ -49,8 +49,9 @@ class WebTeacher(DialogTeacher):
                 continue
 
             for evidence_item in evidence_list:
-                evidence_file_path = os.path.join(self.evidence_dir, 'web',
-                                                  evidence_item['Filename'])
+                evidence_file_path = os.path.join(
+                    self.evidence_dir, 'web', evidence_item['Filename']
+                )
                 with open(evidence_file_path) as evidence_file:
                     evidence = 'Title: %s\n' % evidence_item['Title']
                     evidence += evidence_file.read()
@@ -100,9 +101,9 @@ class WikipediaTeacher(DialogTeacher):
 
             evidence = ''
             for evidence_item in evidence_list:
-                evidence_file_path = os.path.join(self.evidence_dir,
-                                                  'wikipedia',
-                                                  evidence_item['Filename'])
+                evidence_file_path = os.path.join(
+                    self.evidence_dir, 'wikipedia', evidence_item['Filename']
+                )
                 with open(evidence_file_path) as evidence_file:
                     evidence += 'Title: %s\n' % evidence_item['Title']
                     evidence += evidence_file.read() + '\n\n'

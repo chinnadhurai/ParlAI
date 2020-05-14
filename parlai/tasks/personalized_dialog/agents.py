@@ -3,9 +3,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
-from parlai.core.teachers import FbDialogTeacher
-from parlai.core.agents import MultiTaskTeacher
+from parlai.core.teachers import FbDialogTeacher, MultiTaskTeacher
 from .build import build
 
 import copy
@@ -31,9 +29,11 @@ def _path(exsz, task, opt):
     elif dt == 'valid':
         suffix = 'dev'
     return os.path.join(
-        opt['datapath'], 'personalized-dialog', 'personalized-dialog-dataset',
+        opt['datapath'],
+        'personalized-dialog',
+        'personalized-dialog-dataset',
         '{exsz}'.format(exsz=exsz),
-        '{tsk}-{type}.txt'.format(tsk=tasks[int(task)], type=suffix)
+        '{tsk}-{type}.txt'.format(tsk=tasks[int(task)], type=suffix),
     )
 
 
@@ -42,8 +42,10 @@ class KBTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
         build(opt)
         opt['datafile'] = os.path.join(
-            opt['datapath'], 'personalized-dialog', 'personalized-dialog-dataset',
-            'personalized-dialog-kb-all.txt'
+            opt['datapath'],
+            'personalized-dialog',
+            'personalized-dialog-dataset',
+            'personalized-dialog-kb-all.txt',
         )
         super().__init__(opt, shared)
 
@@ -54,8 +56,10 @@ class FullTaskTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
         opt['datafile'] = _path('full', opt['task'].split(':')[2], opt)
         opt['cands_datafile'] = os.path.join(
-            opt['datapath'], 'personalized-dialog', 'personalized-dialog-dataset',
-            'personalized-dialog-candidates.txt'
+            opt['datapath'],
+            'personalized-dialog',
+            'personalized-dialog-dataset',
+            'personalized-dialog-candidates.txt',
         )
         super().__init__(opt, shared)
 
@@ -66,8 +70,10 @@ class SmallTaskTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
         opt['datafile'] = _path('small', opt['task'].split(':')[2], opt)
         opt['cands_datafile'] = os.path.join(
-            opt['datapath'], 'personalized-dialog', 'personalized-dialog-dataset',
-            'personalized-dialog-candidates.txt'
+            opt['datapath'],
+            'personalized-dialog',
+            'personalized-dialog-dataset',
+            'personalized-dialog-candidates.txt',
         )
         super().__init__(opt, shared)
 
@@ -77,11 +83,14 @@ class SmallTaskTeacher(FbDialogTeacher):
 class AllFullTeacher(MultiTaskTeacher):
     def __init__(self, opt, shared=None):
         opt = copy.deepcopy(opt)
-        opt['task'] = ','.join('personalized_dialog:FullTask:%d' % (i + 1)
-                               for i in range(5))
+        opt['task'] = ','.join(
+            'personalized_dialog:FullTask:%d' % (i + 1) for i in range(5)
+        )
         opt['cands_datafile'] = os.path.join(
-            opt['datapath'], 'personalized-dialog', 'personalized-dialog-dataset',
-            'personalized-dialog-candidates.txt'
+            opt['datapath'],
+            'personalized-dialog',
+            'personalized-dialog-dataset',
+            'personalized-dialog-candidates.txt',
         )
         super().__init__(opt, shared)
 
@@ -91,11 +100,14 @@ class AllFullTeacher(MultiTaskTeacher):
 class AllSmallTeacher(MultiTaskTeacher):
     def __init__(self, opt, shared=None):
         opt = copy.deepcopy(opt)
-        opt['task'] = ','.join('personalized_dialog:SmallTask:%d' % (i + 1)
-                               for i in range(5))
+        opt['task'] = ','.join(
+            'personalized_dialog:SmallTask:%d' % (i + 1) for i in range(5)
+        )
         opt['cands_datafile'] = os.path.join(
-            opt['datapath'], 'personalized-dialog', 'personalized-dialog-dataset',
-            'personalized-dialog-candidates.txt'
+            opt['datapath'],
+            'personalized-dialog',
+            'personalized-dialog-dataset',
+            'personalized-dialog-candidates.txt',
         )
         super().__init__(opt, shared)
 

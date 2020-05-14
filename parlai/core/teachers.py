@@ -3,7 +3,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-"""This module provides a set of teachers that deal with dialog:
+"""
+This module provides a set of teachers that deal with dialog.
 
     ``FixedDialogTeacher(Teacher)``
     Base class for teachers in tasks that have fixed dialog - i.e., dialog
@@ -15,33 +16,32 @@
     ``DialogTeacher(FixedDialogTeacher)``
      Base teacher class for doing dialog specifically with fixed chat logs.
 
-    ``FbDialogTeacher(DialogTeacher)``
-     Teacher class that provides access to data in the Facebook Dialog format.
-     See the class description for more details.
-     ** NOTE: ** We plan to deprecate this method soon in favor of ParlAIDialogTeacher,
-     however several existing tasks are currently still using it.
-
     ``ParlAIDialogTeacher(DialogTeacher)``
      Teacher class that provides access to data in the ParlAI Dialog format.
      See the class description for more details.
+
+    ``FbDialogTeacher(DialogTeacher)``
+     Teacher class that provides access to data in the Facebook Dialog format.
+     See the class description for more details. **This class is deprecated**.
 
 This module also includes ``DataLoader``, a threadpool data loader for
 ``FixedDialogTeacher``, and ``DialogData``/``StreamDialogData``, data
 structures for accessing textual dialog data and utilized by ``DialogTeacher``
 """
+import copy
+from typing import List, Tuple
 
-from .agents import Teacher, create_task_agent_from_taskname
-from .image_featurizers import ImageLoader
-from .utils import (
-    AttrDict,
-    flatten,
-    sort_data,
-    make_batches,
-    no_lock,
-    str_to_msg,
-)
+from parlai.core.agents import Agent, create_agent_from_shared
+from parlai.core.image_featurizers import ImageLoader
+from parlai.core.loader import load_teacher_module
+from parlai.core.loader import register_teacher  # noqa: F401
+from parlai.core.message import Message
+from parlai.core.metrics import TeacherMetrics, aggregate_named_reports
+from parlai.core.opt import Opt
+from parlai.utils.misc import AttrDict, no_lock, str_to_msg, warn_once
+from parlai.utils.distributed import get_rank, num_workers, is_distributed
 
-from functools import lru_cache
+from abc import ABC, abstractmethod
 
 import concurrent.futures
 import multiprocessing
@@ -52,31 +52,44 @@ import random
 import sys
 import time
 import os
+import torch
+import json
+import argparse
 
 
 class DataLoader(Thread):
-    """A worker thread that provides a threadpool for data loading.
+    """
+    A worker thread that provides a threadpool for data loading.
 
     A teacher may submit a request to the loader, which will return the
     appropriate data.
 
-    To submit a request, a teacher should call ``request_load`` with the
-    following arguments:
-
-    :param receive_fn: a receive function (for receiving the data)
-    :param load_fn: a load function (for loading the data)
-    :param args: arguments for the load function. args can be either a
-        dictionary of arguments for a function, or a list of positional arguments
+    To submit a request, a teacher should call ``request_load``.
     """
+
     def __init__(self, opt):
         Thread.__init__(self, daemon=True)
         self.num_workers = opt.get('num_load_threads', 1)
         self.request_queue = queue.Queue()
 
     def request_load(self, receive_fn, load_fn, args):
+        """
+        Queue a request for loading.
+
+        :param receive_fn:
+            a receive function (for receiving the data)
+        :param load_fn:
+            a load function (for loading the data)
+        :param args:
+            arguments for the load function. args can be either a dictionary of
+            arguments for a function, or a list of positional arguments
+        """
         self.request_queue.put((receive_fn, load_fn, args))
 
     def run(self):
+        """
+        Run the execution loop.
+        """
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.num_workers)
         with executor:
             while True:
@@ -88,8 +101,96 @@ class DataLoader(Thread):
                 receive_fn(future)
 
 
+class Teacher(Agent):
+    """
+    Basic Teacher agent that keeps track of how many times it's received messages.
+
+    Teachers provide the ``report()`` method to get back metrics.
+    """
+
+    def __init__(self, opt: Opt, shared=None):
+        if not hasattr(self, 'opt'):
+            self.opt = copy.deepcopy(opt)
+        if not hasattr(self, 'id'):
+            self.id = opt.get('task', 'teacher')
+        if not hasattr(self, 'metrics'):
+            self.metrics = TeacherMetrics(
+                threadsafe=(opt.get('numthreads', 1) > 1),
+                metrics_list=opt.get('metrics', 'default'),
+                shared=shared['metrics'] if shared is not None else None,
+            )
+        self.epochDone = False
+
+    # return state/action dict based upon passed state
+    def act(self):
+        """
+        Act upon the previous observation.
+        """
+        if self.observation is not None and 'text' in self.observation:
+            t = {'text': 'Hello agent!'}
+        return t
+
+    def epoch_done(self):
+        """
+        Return whether the epoch is done.
+        """
+        return self.epochDone
+
+    # Default unknown length
+    def num_examples(self):
+        """
+        Return the number of examples (e.g. individual utterances) in the dataset.
+
+        Default implementation returns `None`, indicating an unknown number.
+        """
+        return None
+
+    def num_episodes(self):
+        """
+        Return the number of episodes (e.g. conversations) in the dataset.
+
+        Default implementation returns `None`, indicating an unknown number.
+        """
+        return None
+
+    def report(self):
+        """
+        Return metrics showing total examples and accuracy if available.
+        """
+        return self.metrics.report()
+
+    def reset(self):
+        """
+        Reset the teacher.
+        """
+        super().reset()
+        self.reset_metrics()
+        self.epochDone = False
+
+    def reset_metrics(self):
+        """
+        Reset metrics.
+        """
+        self.metrics.clear()
+
+    def share(self):
+        """
+        In addition to default Agent shared parameters, share metrics.
+        """
+        shared = super().share()
+        shared['metrics'] = self.metrics.share()
+        return shared
+
+    def update_counters(self):
+        """
+        Ensure counters are synchronized.
+        """
+        self.metrics.sync()
+
+
 class FixedDialogTeacher(Teacher):
-    """A teacher agent for all teachers involved in tasks with fixed data.
+    """
+    A teacher agent for all teachers involved in tasks with fixed data.
 
     This class provides the following functionality for its subclasses:
 
@@ -133,6 +234,7 @@ class FixedDialogTeacher(Teacher):
 
     To see this in action, take a look at this teacher in ``tasks.vqa_v1.agents``.
     """
+
     def __init__(self, opt, shared=None):
         super().__init__(opt, shared)
 
@@ -141,9 +243,11 @@ class FixedDialogTeacher(Teacher):
         if not hasattr(self, 'random'):
             self.random = self.datatype == 'train'
         if not hasattr(self, 'training'):
-            self.training = self.datatype.startswith('train')
+            self.training = (
+                self.datatype.startswith('train') and 'evalmode' not in self.datatype
+            )
         if not hasattr(self, 'datafile'):
-            self.datafile = opt.get('datafile', opt.get('pytorch_datafile'))
+            self.datafile = opt.get('datafile')
         # set up support for multithreaded data loading
         self.data_queue = queue.Queue()
         if shared:
@@ -163,45 +267,6 @@ class FixedDialogTeacher(Teacher):
 
         # set up batching
         self.bsz = opt.get('batchsize', 1)
-        self.batchindex = opt.get('batchindex', 0)
-
-        dt = opt.get('datatype', '').split(':')
-        self.use_batch_act = (opt.get('batch_sort', False) and self.bsz > 1 and
-                              'stream' not in dt)
-
-        if self.use_batch_act:
-            if shared:
-                self.lastYs = shared['lastYs']
-                if 'sorted_data' in shared:
-                    self.sorted_data = shared['sorted_data']
-                    self.batches = shared['batches']
-            else:
-                self.lastYs = [None] * self.bsz
-                ordered_opt = opt.copy()
-                ordered_opt['datatype'] = ':'.join((dt[0], 'ordered'))
-                ordered_opt['batchsize'] = 1
-                ordered_opt['numthreads'] = 1
-                ordered_opt['hide_labels'] = False
-                ordered_teacher = create_task_agent_from_taskname(ordered_opt)[0]
-
-                clen = opt.get('context_length', -1)
-                incl = opt.get('include_labels', True)
-
-                if ordered_teacher.num_examples() > 1000000:  # one million
-                    print('WARNING: this dataset is large, and batch sorting '
-                          'may use too much RAM or take too long to set up. '
-                          'Consider disabling batch sorting, setting '
-                          'context-length to a small integer (if this dataset '
-                          'has episodes of multiple examples), or streaming '
-                          'the data using a streamed data mode if supported.')
-
-                flatdata = flatten(ordered_teacher,
-                                   context_length=clen, include_labels=incl)
-                self.sorted_data = sort_data(flatdata)
-                self.batches = make_batches(self.sorted_data, self.bsz)
-                # one fixed-seed shuffle keeps determinism but makes sure that
-                # examples aren't presented in sorted order (bad for `-vme`)
-                random.Random(42).shuffle(self.batches)
 
     def _lock(self):
         if hasattr(self.index, 'get_lock'):
@@ -210,8 +275,8 @@ class FixedDialogTeacher(Teacher):
             return no_lock()
 
     def reset(self):
-        """Reset the dialog so that it is at the start of the epoch,
-        and all metrics are reset.
+        """
+        Reset the dialog to the start of the epoch, and reset all metrics.
         """
         super().reset()
         self.metrics.clear()
@@ -223,20 +288,23 @@ class FixedDialogTeacher(Teacher):
         self.episode_idx = -1
         with self._lock():
             self.index.value = -1
-        if self.use_batch_act and self.random and hasattr(self, 'batches'):
-            random.shuffle(self.batches)
 
     def submit_load_request(self):
-        """An agent should implement this method to submit requests to the
-        data loader. At the end of this method, the agent should call
+        """
+        Submit a load request.
+
+        An agent should implement this method to submit requests to the data
+        loader. At the end of this method, the agent should call
         ``self.data_loader.request_load()`` with the appropriate args.
 
         By default, this method does nothing.
         """
+        # TODO: mark as abstract
         pass
 
     def receive_data(self, future):
-        """Function for receiving data from the data loader.
+        """
+        Receive data from the data loader.
 
         :param future: result from the load request.
         """
@@ -244,36 +312,34 @@ class FixedDialogTeacher(Teacher):
         self.data_queue.put(data)
 
     def share(self):
-        """Shares data structures between other instances created for batching
-        or hogwild.
+        """
+        Share the data and dataloader.
         """
         shared = super().share()
 
-        if hasattr(self, 'lastYs'):
-            # share lastYs to communicate between batch_act and observe
-            shared['lastYs'] = self.lastYs
-
         if hasattr(self, 'examples'):
             shared['examples'] = self.examples
+
+        if hasattr(self, 'data_loader'):
+            shared['data_loader'] = self.data_loader
 
         if self.opt.get('numthreads', 1) > 1:
             if type(self.index) is not multiprocessing.sharedctypes.Synchronized:
                 # for multithreading need to move index into threadsafe memory
                 self.index = Value('l', -1)
-            if hasattr(self, 'sorted_data'):
-                shared['sorted_data'] = self.sorted_data
-                shared['batches'] = self.batches
-        else:
-            shared['data_loader'] = self.data_loader
+
         shared['index'] = self.index
 
         return shared
 
     def next_episode_idx(self, num_eps=None, loop=None):
-        """Returns the next episode index.
+        """
+        Return the next episode index.
 
-        :param num_eps: default None uses ``num_episodes`` value.
-        :param loop: default None loops during training but not evaluation.
+        :param num_eps:
+            default None uses ``num_episodes`` value.
+        :param loop:
+            default None loops during training but not evaluation.
         """
         if num_eps is None:
             num_eps = self.num_episodes()
@@ -290,10 +356,12 @@ class FixedDialogTeacher(Teacher):
         return new_idx
 
     def next_example(self):
-        """Returns the next example.
-        If there are multiple examples in the same episode, returns the next
-        one in that episode. If that episode is over, gets a new episode index
-        and returns the first example of that episode.
+        """
+        Return the next example.
+
+        If there are multiple examples in the same episode, returns the next one in that
+        episode. If that episode is over, gets a new episode index and returns the first
+        example of that episode.
         """
         if self.episode_done:
             self.episode_idx = self.next_episode_idx()
@@ -307,8 +375,11 @@ class FixedDialogTeacher(Teacher):
         ex = self.get(self.episode_idx, self.entry_idx)
         self.episode_done = ex.get('episode_done', False)
 
-        if (not self.random and self.episode_done and
-                self.episode_idx + self.opt.get("batchsize", 1) >= self.num_episodes()):
+        if (
+            not self.random
+            and self.episode_done
+            and self.episode_idx + self.opt.get("batchsize", 1) >= self.num_episodes()
+        ):
             epoch_done = True
         else:
             epoch_done = False
@@ -316,7 +387,9 @@ class FixedDialogTeacher(Teacher):
         return ex, epoch_done
 
     def next_batch(self):
-        """Returns the next batch of examples."""
+        """
+        Return the next batch of examples.
+        """
         # get next batch
         with self._lock():
             self.index.value += 1
@@ -336,88 +409,63 @@ class FixedDialogTeacher(Teacher):
 
         return self.batches[batch_idx]
 
-    def num_episodes(self):
-        """Get the number of episodes in this dataset."""
-        if self.use_batch_act:
-            # when using batch_act, this is length of sorted data
-            return len(self.sorted_data)
+    def num_episodes(self) -> int:
+        """
+        Get the number of episodes in this dataset.
+        """
         raise RuntimeError('"num_episodes" must be overriden by children.')
 
-    @lru_cache(maxsize=1)
-    def num_examples(self):
-        """Get the total number of examples in this dataset."""
-        if self.use_batch_act:
-            # when using batch_act, this is length of sorted data
-            return len(self.sorted_data)
+    def num_examples(self) -> int:
+        """
+        Get the total number of examples in this dataset.
+        """
         raise RuntimeError('"num_examples" must be overriden by children.')
 
     def get(self, episode_idx, entry_idx=0):
-        """Get the specified episode and the specified entry in that episode.
+        """
+        Get the specified episode and the specified entry in that episode.
+
         Children must override this method in order to inherit the
         `next_example` method.
 
-        :param episode_idx: which episode to return examples from
-        :param entry_idx: which example to return from the episode.
-                          Many datasets have only single-entry episodes,
-                          so this defaults tozero.
+        :param episode_idx:
+            which episode to return examples from
+        :param entry_idx:
+            which example to return from the episode.  Many datasets have only
+            single-entry episodes, so this defaults to zero.
         """
+        # TODO: mark as abstract, get rid of runtime error.
         raise RuntimeError('"Get" method must be overriden by children.')
 
     def observe(self, observation):
-        """Process observation for metrics."""
-        if self.use_batch_act:
-            self.lastY = self.lastYs[self.batchindex]
-            self.lastYs[self.batchindex] = None
-
+        """
+        Process observation for metrics.
+        """
         if hasattr(self, 'lastY') and self.lastY is not None:
-            self.metrics.update(observation, self.lastY)
+            self.metrics.evaluate_response(observation, self.lastY)
             self.lastY = None
         return observation
 
-    def batch_act(self, observations):
-        """Returns an entire batch of examples instead of just one.
-           Note: Currently used by PytorchDataTeacher.
-        """
-        # we ignore observations
-        if not hasattr(self, 'epochDone'):
-            # reset if haven't yet
-            self.reset()
-
-        batch = self.next_batch()
-        # pad batch
-        if len(batch) < self.bsz:
-            batch += [
-                {'episode_done': True, 'id': self.getID()}
-            ] * (self.bsz - len(batch))
-
-        # remember correct answer if available (for padding, None)
-        for i, ex in enumerate(batch):
-            if 'labels' in ex:
-                labels = ex['labels']
-                self.lastYs[i] = labels
-                if not self.datatype.startswith('train') or 'evalmode' in self.datatype:
-                    del ex['labels']
-                    if not self.opt.get('hide_labels', False):
-                        ex['eval_labels'] = labels
-            else:
-                self.lastYs[i] = ex.get('eval_labels', None)
-
-        return batch
-
     def act(self):
-        """Send new dialog message."""
+        """
+        Send new dialog message.
+        """
         if not hasattr(self, 'epochDone'):
             # reset if haven't yet
             self.reset()
 
         # get next example, action is episode_done dict if already out of exs
         action, self.epochDone = self.next_example()
-        action['id'] = self.getID()
+        # TODO: all teachers should eventually create messages
+        # while setting up the data, so this won't be necessary
+        action = Message(action)
+        action.force_set('id', self.getID())
 
         # remember correct answer if available
         self.lastY = action.get('labels', action.get('eval_labels', None))
-        if ((not self.datatype.startswith('train') or 'evalmode' in self.datatype) and
-                'labels' in action):
+        if (
+            not self.datatype.startswith('train') or 'evalmode' in self.datatype
+        ) and 'labels' in action:
             # move labels to eval field so not used for training
             # but this way the model can use the labels for perplexity or loss
             action = action.copy()
@@ -429,7 +477,8 @@ class FixedDialogTeacher(Teacher):
 
 
 class DialogTeacher(FixedDialogTeacher):
-    """A base teacher class for doing dialog with fixed chat logs.
+    """
+    A base teacher class for doing dialog with fixed chat logs.
 
     This class provides a set a basic functionality:
 
@@ -447,65 +496,104 @@ class DialogTeacher(FixedDialogTeacher):
     def __init__(self, opt, shared=None):
         # Check for setup_data
         if not hasattr(self, 'setup_data'):
-            raise RuntimeError('Must implement setup_data or subclass a class '
-                               'which implements it (e.g. FbDialogTeacher) '
-                               'in order to use this class.')
+            raise RuntimeError(
+                'Must implement setup_data or subclass a class '
+                'which implements it (e.g. FbDialogTeacher) '
+                'in order to use this class.'
+            )
         super().__init__(opt, shared)
 
         self.startTime = time.time()
         self.datatype = opt['datatype']
-        self.training = self.datatype.startswith('train')
-        self.stream = 'stream' in self.datatype.split(':')
+        self.training = (
+            self.datatype.startswith('train') and 'evalmode' not in self.datatype
+        )
+        self.stream = 'stream' in self.datatype
 
-        if not self.use_batch_act:
-            # first initialize any shared objects
-            data_class = StreamDialogData if self.stream else DialogData
-            kwargs = {'cycle': self.training} if self.stream else {}
-            if shared and shared.get('data'):
-                self.data = data_class(opt, shared=shared['data'], **kwargs)
-            else:
-                self.data = data_class(opt, data_loader=self.setup_data,
-                                       cands=self.label_candidates(), **kwargs)
+        # first initialize any shared objects
+        data_class = StreamDialogData if self.stream else DialogData
+        kwargs = (
+            # never cycle if "ordered" is in the datatype. this is used by
+            # build_dict to enumerate through the data exactly once while still
+            # marking examples as training examples.
+            {'cycle': self.training and 'ordered' not in self.datatype}
+            if self.stream
+            else {}
+        )
+        if shared and shared.get('data'):
+            self.data = data_class(opt, shared=shared['data'], **kwargs)
+        else:
+            self.data = data_class(
+                opt,
+                data_loader=self.setup_data,
+                cands=self.label_candidates(),
+                **kwargs,
+            )
 
         self.reset()
 
     def reset(self):
-        # Reset the dialog so that it is at the start of the epoch,
-        # and all metrics are reset.
+        """
+        Reset the dialog to the start of the epoch, reset all metrics.
+        """
         super().reset()
         if self.stream:
             self.data.reset()
             self.epochDone = False
 
     def share(self):
+        """
+        Share the data.
+        """
         shared = super().share()
         if hasattr(self, 'data'):
             shared['data'] = self.data.share()
         return shared
 
     def label_candidates(self):
-        """Returns ``None`` by default, but override this in children (such as
-        ``FbDialogTeacher``) to load up candidate labels for every example.
         """
+        Provide consistent label candidates for all examples.
+
+        Default implementation returns ``None`` always, but this may be overriden to
+        provide candidates in all areas. See ``FbDialogueTeacher``.
+        """
+        # TODO DEPRECATIONDAY: FbiDialogueTeacher is being deprecated, should we
+        # remove this?
+
+        # TODO: mark as optionally abstract?
         return None
 
-    def num_episodes(self):
+    def num_episodes(self) -> int:
+        """
+        Return the number of episodes in the data.
+        """
         try:
             return self.data.num_episodes()
         except AttributeError:
             return super().num_episodes()
 
-    @lru_cache(maxsize=1)
-    def num_examples(self):
+    def num_examples(self) -> int:
+        """
+        Return the number of examples in the data.
+        """
+        if hasattr(self, '_num_examples_cache'):
+            return self._num_examples_cache
         try:
-            return self.data.num_examples()
+            self._num_examples_cache: int = self.data.num_examples()
         except AttributeError:
-            return super().num_examples()
+            self._num_examples_cache = super().num_examples()
+        return self._num_examples_cache
 
     def get(self, episode_idx, entry_idx=0):
+        """
+        Get a specific example.
+        """
         return self.data.get(episode_idx, entry_idx)[0]
 
     def next_example(self):
+        """
+        Get the next example.
+        """
         if self.stream:
             action, epoch_done = self.data.get()
         else:
@@ -514,7 +602,9 @@ class DialogTeacher(FixedDialogTeacher):
 
 
 class DialogData(object):
-    """Provides a data structure for accessing textual dialog data.
+    """
+    Provides a data structure for accessing textual dialog data.
+
     This can be used whenever the dialog data is a fixed log of chats
     (i.e not a simulator setting). The logs can include dialog text and possibly
     supervised labels, candidate labels and rewards.
@@ -522,20 +612,20 @@ class DialogData(object):
     All these are stored in this internal data format which is used by the
     ``DialogTeacher`` class.
 
-    :param opt: options to initialize the class
+    :param opt:
+        options to initialize the class
+    :param data_loader:
+        an iterable with each call returning a tuple in the form
+        ``((x, y, r, c, i), new_episode?)`` where the ``x`` and ``new_episode``
+        fields are mandatory and other fields may be omitted or ``None``.
+    :param cands:
+        can be set to provide a list of candidate labels for every example in
+        this dataset, which the agent can choose from (the correct answer
+        should be in this set).
 
-    :param data_loader: an iterable with each call returning a tuple in the
-                        form ``((x, y, r, c, i), new_episode?)`` where
-                        the ``x`` and ``new_episode`` fields are mandatory and
-                        other fields may be omitted or ``None``.
-
-    :param cands: can be set to provide a list of candidate labels for every
-                  example in this dataset, which the agent can choose from (the
-                  correct answer should be in this set).
-
-    :param random: tells the data class whether or not to visit episodes
-                   sequentially or randomly when returning examples to the
-                   caller.
+    :param random:
+        tells the data class whether or not to visit episodes sequentially or
+        randomly when returning examples to the caller.
 
     The contents of the ``((x, y, r, c, i), new_episode?)`` tuples returned by
     the data loader is the following:
@@ -552,6 +642,13 @@ class DialogData(object):
     """
 
     def __init__(self, opt, data_loader=None, cands=None, shared=None, **kwargs):
+        # in case we need to shard the dataset
+        self.rank = get_rank()
+        self.num_workers = num_workers()
+        self.is_distributed_and_is_eval = is_distributed() and any(
+            x in opt['datatype'] for x in ('valid', 'test', 'train:evalmode')
+        )
+
         # self.data is a list of episodes
         # each episode is a tuple of entries
         # each entry is a tuple of values for the action/observation table
@@ -564,23 +661,30 @@ class DialogData(object):
             self.data = []
             self._load(data_loader, opt['datafile'])
             self.cands = None if cands is None else set(sys.intern(c) for c in cands)
+
         self.addedCands = []
         self.copied_cands = False
 
     def share(self):
+        """
+        Share the data.
+        """
         shared = {
             'data': self.data,
             'cands': self.cands,
-            'image_loader': self.image_loader
+            'image_loader': self.image_loader,
         }
         return shared
 
     def _read_episode(self, data_loader):
-        """Reads one episode at a time from the provided iterable over entries.
-
-        :param data_loader: an iterable which returns tuples in the format
-                            described in the class docstring.
         """
+        Read one episode at a time from the provided iterable over entries.
+
+        :param data_loader:
+            an iterable which returns tuples in the format described in the
+            class docstring.
+        """
+
         episode = []
         last_cands = None
         for entry, new in data_loader:
@@ -590,6 +694,7 @@ class DialogData(object):
                 last_cands = None
 
             # intern all strings so we don't store them more than once
+            # TODO: clean up the if .. sys.intern else None by refactoring
             new_entry = []
             if len(entry) > 0:
                 # process text if available
@@ -597,45 +702,46 @@ class DialogData(object):
                     new_entry.append(sys.intern(entry[0]))
                 else:
                     new_entry.append(None)
+                # TODO: unindent all of these one level.
                 if len(entry) > 1:
                     # process labels if available
                     if entry[1] is None:
                         new_entry.append(None)
                     elif hasattr(entry[1], '__iter__') and type(entry[1]) is not str:
+                        # TODO: this could use the abc collections
                         # make sure iterable over labels, not single string
                         new_entry.append(tuple(sys.intern(e) for e in entry[1]))
+                    elif isinstance(entry[1], str):
+                        new_entry.append((sys.intern(entry[1]),))
+                    else:
+                        raise TypeError(f"{entry[1]} is not list or str")
+                if len(entry) > 2:
+                    # process reward if available
+                    if entry[2] is not None:
+                        new_entry.append(entry[2])
+                    else:
+                        new_entry.append(None)
+                if len(entry) > 3:
+                    # process label candidates if available
+                    if entry[3] is None:
+                        new_entry.append(None)
+                    elif last_cands and entry[3] is last_cands:
+                        # if cands are shared, say "same" so we
+                        # don't store them again
+                        # TODO: This is bad, and it's not actually used anywhere
+                        # DEPRECATIONDAY: make this more rational
+                        new_entry.append(sys.intern('same as last time'))
+                    elif hasattr(entry[3], '__iter__') and type(entry[3]) is not str:
+                        # make sure iterable over candidates, not single string
+                        last_cands = entry[3]
+                        new_entry.append(tuple(sys.intern(e) for e in entry[3]))
                     else:
                         raise TypeError(
-                            'Must provide iterable over labels, not a single string.'
+                            'Must provide iterable over label candidates, '
+                            'not a single string.'
                         )
-                    if len(entry) > 2:
-                        # process reward if available
-                        if entry[2] is not None:
-                            new_entry.append(entry[2])
-                        else:
-                            new_entry.append(None)
-                        if len(entry) > 3:
-                            # process label candidates if available
-                            if entry[3] is None:
-                                new_entry.append(None)
-                            elif last_cands and entry[3] is last_cands:
-                                # if cands are shared, say "same" so we
-                                # don't store them again
-                                new_entry.append(
-                                    sys.intern('same as last time'))
-                            elif (hasattr(entry[3], '__iter__') and
-                                    type(entry[3]) is not str):
-                                # make sure iterable over candidates, not single string
-                                last_cands = entry[3]
-                                new_entry.append(tuple(
-                                    sys.intern(e) for e in entry[3]))
-                            else:
-                                raise TypeError(
-                                    'Must provide iterable over label candidates, '
-                                    'not a single string.'
-                                )
-                            if len(entry) > 4 and entry[4] is not None:
-                                new_entry.append(sys.intern(entry[4]))
+                if len(entry) > 4 and entry[4] is not None:
+                    new_entry.append(sys.intern(entry[4]))
 
             episode.append(tuple(new_entry))
 
@@ -643,41 +749,54 @@ class DialogData(object):
             yield tuple(episode)
 
     def _load(self, data_loader, datafile):
-        """Loads up data from an iterable over tuples described in the class
-        docs.
-
-        :param data_loader: (iter) an iterator which returns tuples in the
-                            format described in the class docstring.
-        :param datafile: (str)
         """
-        for episode in self._read_episode(data_loader(datafile)):
-            self.data.append(episode)
+        Load up data from an iterable over tuples described in the class docs.
+
+        :param iter data_loader:
+            an iterator which returns tuples in the format described in the
+            class docstring.
+        :param str datafile:
+        """
+        for i, episode in enumerate(self._read_episode(data_loader(datafile))):
+            if not self.is_distributed_and_is_eval or i % self.num_workers == self.rank:
+                self.data.append(episode)
 
     def num_episodes(self):
-        """Return number of episodes in the dataset."""
+        """
+        Return number of episodes in the dataset.
+        """
         return len(self.data)
 
-    @lru_cache(maxsize=1)
     def num_examples(self):
-        """Returns total number of entries available.
+        """
+        Return total number of entries available.
 
         Each episode has at least one entry, but might have many more.
         """
-        return sum(len(episode) for episode in self.data)
+        if hasattr(self, '_num_examples_cache'):
+            return self._num_examples_cache
+        self._num_examples_cache = sum(len(episode) for episode in self.data)
+        return self._num_examples_cache
 
     def get(self, episode_idx, entry_idx=0):
-        """Get the specified episode and the specified entry in that episode.
-
-        :param episode_idx: which episode to return examples from
-        :param entry_idx: which example to return from the episode.
-                          Many datasets have only single-entry episodes,
-                          so this defaults tozero.
         """
+        Get the specified episode and the specified entry in that episode.
+
+        :param episode_idx:
+            which episode to return examples from
+        :param entry_idx:
+            which example to return from the episode. Many datasets have only
+            single-entry episodes, so this defaults to zero.
+        """
+        if episode_idx >= len(self.data):
+            return {'episode_done': True}, True
+        next_episode_idx_for_rank = episode_idx + 1
         # first look up data
         episode = self.data[episode_idx]
         entry = episode[entry_idx]
         episode_done = entry_idx == len(episode) - 1
-        end_of_data = episode_done and episode_idx == len(self.data) - 1
+
+        end_of_data = episode_done and next_episode_idx_for_rank >= len(self.data)
 
         # now pack it in a action-observation dictionary
         table = self.build_table(entry)
@@ -687,7 +806,8 @@ class DialogData(object):
         return table, end_of_data
 
     def build_table(self, entry):
-        """Packs an entry into an action-observation dictionary.
+        """
+        Packs an entry into an action-observation dictionary.
 
         :param entry: a tuple in the form described in the class docstring.
         """
@@ -697,19 +817,18 @@ class DialogData(object):
         if len(entry) > 1:
             if entry[1] is not None:
                 table['labels'] = entry[1]
-            if len(entry) > 2:
-                if entry[2] is not None:
-                    table['reward'] = entry[2]
-                if len(entry) > 3:
-                    if entry[3] is not None:
-                        table['label_candidates'] = entry[3]
-                    if len(entry) > 4 and entry[4] is not None:
-                        img = self.image_loader.load(entry[4])
-                        if img is not None:
-                            table['image'] = img
+        if len(entry) > 2:
+            if entry[2] is not None:
+                table['reward'] = entry[2]
+        if len(entry) > 3:
+            if entry[3] is not None:
+                table['label_candidates'] = entry[3]
+        if len(entry) > 4 and entry[4] is not None:
+            img = self.image_loader.load(entry[4])
+            if img is not None:
+                table['image'] = img
 
-        if (table.get('labels', None) is not None and
-                self.cands is not None):
+        if table.get('labels', None) is not None and self.cands is not None:
             if self.addedCands:
                 # remove elements in addedCands
                 self.cands.difference_update(self.addedCands)
@@ -731,36 +850,43 @@ class DialogData(object):
 
 
 class StreamDialogData(DialogData):
-    """Provides a data structure for streaming textual dialog data.
+    """
+    Provides a data structure for streaming textual dialog data.
+
     This can be used whenever the dialog data follows the format described in
     DialogData but cannot fit entirely into memory.
 
     Additional keyword-argument cycle defines if the stream should restart from
     the beginning after an epoch is finished (defaults to True).
 
-    :param opt: options to initialize the class
-
-    :param data_loader: an iterable with each call returning a tuple in the
-                        form ``((x, y, r, c, i), new_episode?)`` where
-                        the ``x`` and ``new_episode`` fields are mandatory and
-                        other fields may be omitted or ``None``.
-
-    :param cands: can be set to provide a list of candidate labels for every
-                  example in this dataset, which the agent can choose from (the
-                  correct answer should be in this set).
-
-    :param random: tells the data class whether or not to visit episodes
-                   sequentially or randomly when returning examples to the
-                   caller.
-
-    :param cycle: (default True) whether to restart at beginning when end of
-                  stream reached without reset being called.
+    :param opt:
+        options to initialize the class
+    :param data_loader:
+        an iterable with each call returning a tuple in the form
+        ``((x, y, r, c, i), new_episode?)`` where the ``x`` and ``new_episode``
+        fields are mandatory and other fields may be omitted or ``None``.
+    :param cands:
+        can be set to provide a list of candidate labels for every example in
+        this dataset, which the agent can choose from (the correct answer
+        should be in this set).
+    :param random:
+        tells the data class whether or not to visit episodes sequentially or
+        randomly when returning examples to the caller.
+    :param cycle:
+        (default True) whether to restart at beginning when end of stream
+        reached without reset being called.
     """
+
+    # represents that we haven't read in any data at all
+    _FIRST_PASS = None
+    # represents that we are out of data.
+    _END_OF_EPOCH = -1
 
     def __init__(self, opt, data_loader=None, cands=None, shared=None, **kwargs):
         # super() call initiates stream in self.data by calling _load()
         super().__init__(opt, data_loader, cands, shared, **kwargs)
         self.cycle = kwargs['cycle'] if 'cycle' in kwargs else True
+
         if shared:
             # auxiliary instances hold pointer to main datastream in self.data
             self.reset_data = shared['reset']
@@ -776,15 +902,26 @@ class StreamDialogData(DialogData):
             self.reset_data = None
             self.is_reset = True
             if opt.get('numthreads', 1) > 1:
-                print('WARNING: multithreaded streaming will process every '
-                      'example numthreads times.')
+                print(
+                    'WARNING: multithreaded streaming will process every '
+                    'example numthreads times.'
+                )
                 self.lock = Lock()
         self.entry_idx = 0
-        self.next_episode = None
+        self.cur_episode = self._FIRST_PASS
         self.num_eps = None
         self.num_exs = None
 
+        self.rank = get_rank()
+        self.num_workers = num_workers()
+        self.is_distributed_and_is_eval = self.num_workers > 1 and any(
+            x in opt['datatype'] for x in ('valid', 'test', 'train:evalmode')
+        )
+
     def share(self):
+        """
+        Share the stream.
+        """
         shared = super().share()
         # also share reset method to allow datastream to be reset
         shared['reset'] = self.reset
@@ -797,25 +934,35 @@ class StreamDialogData(DialogData):
         return shared
 
     def _load(self, data_loader, datafile):
-        """Load data generator into data field."""
+        """
+        Load data generator into data field.
+        """
         self.data = self._data_generator(data_loader, datafile)
 
     def _data_generator(self, data_loader, datafile):
-        """Generates data using the iterator over tuples constructed
-        by data_loader.
+        """
+        Generate data using the iterator over tuples constructed by data_loader.
         """
         self.is_reset = False
+        idx = 0
         while True:
             for episode in self._read_episode(data_loader(datafile)):
-                yield episode
-            yield -1
+                # We only shard the data set at evaluation time, as training is
+                # done using sampling-with-replacement.
+                if not self.is_distributed_and_is_eval or (
+                    idx % self.num_workers == self.rank
+                ):
+                    yield episode
+                idx += 1
             while not self.cycle:
-                yield -1
+                yield self._END_OF_EPOCH
 
     def load_length(self):
-        """Calculates the length of the dataset and caches it in a file.
-        Note that this can take some time for large datasets. Episode and entry
-        indexes cannot be specified during streaming.
+        """
+        Calculate the length of the dataset and caches it in a file.
+
+        Note that this can take some time for large datasets. Episode and entry indexes
+        cannot be specified during streaming.
         """
         datafiles = self.datafile if type(self.datafile) is tuple else [self.datafile]
         length_file = datafiles[0] + ".lengths"
@@ -833,11 +980,17 @@ class StreamDialogData(DialogData):
         return int(num_eps), int(num_exs)
 
     def num_examples(self):
+        """
+        Return the number of examples in the data.
+        """
         if not self.num_exs:
             self.num_eps, self.num_exs = self.load_length()
         return self.num_exs
 
     def num_episodes(self):
+        """
+        Return the number of episodes in the data.
+        """
         if not self.num_eps:
             self.num_eps, self.num_exs = self.load_length()
         return self.num_eps
@@ -849,58 +1002,49 @@ class StreamDialogData(DialogData):
             return no_lock()
 
     def get(self):
-        """Returns a the next entry from the stream in the current episode for
-        this instance. When episode is done returns first entry of next
-        episode.
         """
-        # first look up data
-        if self.next_episode != -1 or self.entry_idx != 0:
-            with self._lock():
-                if self.next_episode is None:
-                    self.next_episode = next(self.data)
-                if self.entry_idx == 0:
-                    self.cur_episode = self.next_episode
-                    self.next_episode = next(self.data)
-                entry = self.cur_episode[self.entry_idx]
+        Get the next entry from the stream.
 
-                # now pack it in a action-observation dictionary
-                table = self.build_table(entry)
-
-                episode_done = self.entry_idx == len(self.cur_episode) - 1
-                if episode_done:
-                    self.entry_idx = 0
-                else:
-                    self.entry_idx += 1
-                end_of_data = episode_done and self.next_episode is -1
-                if end_of_data and self.cycle:
-                    self.next_episode = next(self.data)
-
-                # last entry in this episode
-                table['episode_done'] = episode_done
+        When episode is done returns first entry of next episode.
+        """
+        if self.cur_episode is self._FIRST_PASS:
+            # first go around, always read off the episode
+            # maybe lock this line
+            self.cur_episode = next(self.data)
+        if self.cur_episode == self._END_OF_EPOCH:
+            # we're done here
+            return {'episode_done': True}, True
+        entry = self.cur_episode[self.entry_idx]
+        table = self.build_table(entry)
+        episode_done = self.entry_idx == len(self.cur_episode) - 1
+        table['episode_done'] = episode_done
+        if episode_done:
+            # maybe lock this line
+            self.cur_episode = next(self.data)
+            self.entry_idx = 0
         else:
-            table = {'episode_done': True}
-            end_of_data = True
-
-        return table, end_of_data
+            self.entry_idx += 1
+        return table, self.cur_episode == self._END_OF_EPOCH
 
     def reset(self):
-        """Reset the datastream to its beginning."""
+        """
+        Reset the datastream to its beginning.
+        """
         if self.reset_data is not None:
             # auxiliary instance, reset main datastream
             self.data = self.reset_data()
-            self.next_episode = None
         elif not self.is_reset:
             # if main instance is not reset, reset datastream
             self._load(self.data_loader, self.datafile)
             self.is_reset = True
-            self.next_episode = None
         self.entry_idx = 0
+        self.cur_episode = self._FIRST_PASS
         return self.data
 
 
 class FbDialogTeacher(DialogTeacher):
-    """This module provides access to data in the Facebook Dialog format.
-
+    """
+    This module provides access to data in the Facebook Dialog format.
 
     Subclasses ``DialogTeacher`` for functionality and provides an
     implementation of ``setup_data()`` which iterates over datasets in the
@@ -968,17 +1112,26 @@ class FbDialogTeacher(DialogTeacher):
         super().__init__(opt, shared)
 
     def share(self):
+        """
+        Share the data and canidates.
+        """
         shared = super().share()
         shared['cands'] = self.cands
         return shared
 
     def label_candidates(self):
+        """
+        Return the candidates.
+        """
         return self.cands
 
     def load_cands(self, path):
-        """Load global fixed set of candidate labels that the teacher provides
-        every example (the true labels for a specific example are also added to
-        this set, so that it's possible to get the right answer).
+        """
+        Load a global fixed set of candidates.
+
+        The candidates will be provided by the teacher for every example (the true
+        labels for a specific example are also added to this set, so that it's possible
+        to get the right answer).
         """
         if path is None:
             return None
@@ -1000,7 +1153,7 @@ class FbDialogTeacher(DialogTeacher):
                         cands = []
                     if lines_have_ids:
                         space_idx = line.find(' ')
-                        line = line[space_idx + 1:]
+                        line = line[space_idx + 1 :]
                         if cands_are_replies:
                             sp = line.split('\t')
                             if len(sp) > 1 and sp[1] != '':
@@ -1012,7 +1165,8 @@ class FbDialogTeacher(DialogTeacher):
         return cands
 
     def setup_data(self, path):
-        """Reads data in the fbdialog format.
+        r"""
+        Read data in the fbdialog format.
 
         Returns ``((x,y,r,c), new_episode?)`` tuples.
 
@@ -1023,7 +1177,7 @@ class FbDialogTeacher(DialogTeacher):
 
         ::
 
-            x: 'Sam went to the kitchen\\nPat gave Sam the milk\\nWhere is the milk?'
+            x: 'Sam went to the kitchen\nPat gave Sam the milk\nWhere is the milk?'
             y: ['kitchen']
             r: '1'
             c: ['hallway', 'kitchen', 'bathroom']
@@ -1062,7 +1216,7 @@ class FbDialogTeacher(DialogTeacher):
                 # split line into constituent parts, if available:
                 # x<tab>y<tab>reward<tab>label_candidates
                 # where y, reward, and label_candidates are optional
-                split = line[space_idx + 1:].split('\t')
+                split = line[space_idx + 1 :].split('\t')
 
                 # remove empty items and strip each one
                 for i in range(len(split)):
@@ -1124,7 +1278,8 @@ class FbDialogTeacher(DialogTeacher):
 
 
 class ParlAIDialogTeacher(FixedDialogTeacher):
-    """This module provides access to data in the ParlAI Text Dialog format.
+    """
+    This module provides access to data in the ParlAI Text Dialog format.
 
     Subclasses ``FixedDialogTeacher`` for functionality and provides an
     implementation of ``setup_data()`` which iterates over datasets in the
@@ -1190,31 +1345,64 @@ class ParlAIDialogTeacher(FixedDialogTeacher):
         else:
             self.episodes = shared['episodes']
             self.num_exs = sum(len(e) for e in self.episodes)
-        self.id = opt.get('parlaidialogteacher_datafile', 'teacher')
+
+        self.id = opt['task']
+
         self.reset()
 
     def share(self):
+        """
+        Share the episodes.
+        """
         shared = super().share()
         shared['episodes'] = self.episodes
         return shared
 
     def num_examples(self):
+        """
+        Return the number of examples from the data.
+        """
         return self.num_exs
 
     def num_episodes(self):
+        """
+        Return the number of episodes from the data.
+        """
         return len(self.episodes)
 
     def get(self, episode_idx, entry_idx=None):
-        return self.episodes[episode_idx][entry_idx].copy()
+        """
+        Get a specific example from the dataset.
+        """
+        return self.episodes[episode_idx][entry_idx]
 
     def _setup_data(self, path):
         print("[loading parlAI text data:" + path + "]")
         self.episodes = []
         self.num_exs = 0
         eps = []
-        with open(path) as read:
-            for line in read:
+        with open(path, newline='\n') as read:
+            for line_no, line in enumerate(read, 1):
                 msg = str_to_msg(line.rstrip('\n'))
+                if msg and 'eval_labels' in msg:
+                    raise ValueError(
+                        f"It looks like you've written eval_labels as a key in your "
+                        f"data file. This is not appropriate; labels will be converted "
+                        f"for you automatically. This is happening on Line {line_no} "
+                        f"in {path}. The line is:\n\t{line}"
+                    )
+                if msg and 'text' not in msg:
+                    raise ValueError(
+                        f'ParlaiDialogTeacher requires a "text" field in every '
+                        f'entry, but one is missing in Line {line_no} in {path}. '
+                        f'The line is:\n\t{line}'
+                    )
+                if msg and 'labels' not in msg:
+                    raise ValueError(
+                        f'ParlaiDialogTeacher requires a "labels" field in every '
+                        f'entry, but one is missing in Line {line_no} in {path}. '
+                        f'The line is:\n\t{line}'
+                    )
                 if msg:
                     self.num_exs += 1
                     eps.append(msg)
@@ -1223,5 +1411,829 @@ class ParlAIDialogTeacher(FixedDialogTeacher):
                         eps = []
         if len(eps) > 0:
             # add last episode
-            eps[-1]['episode_done'] = True
+            eps[-1].force_set('episode_done', True)
             self.episodes.append(eps)
+        if len(self.episodes) == 1 and line_no > 100:
+            warn_once(
+                'The data in {path} looks like one very long episode. If this '
+                'is intentional, you may ignore this, but you MAY have a bug in '
+                'your data.'
+            )
+
+
+class AbstractImageTeacher(FixedDialogTeacher):
+    """
+    Abstract class to allow easier creation of image + dialogue tasks.
+
+    This class handles creating image features via ImageLoader if applicable
+    (resnet, resnext variants) or loading existing image features from a dict
+    path as per get_image_features_path().
+
+    Important methods and properties (override in subclass if needed):
+
+    - get_data_path(): where data file is found (default: <datapath>/<task>)
+    - get_image_path(): where images found (default: <datapath>/<task>/images)
+    - get_image_features_path(): dict of image features (default:
+      <datapath>/<task>/image_features)
+    - @property image_id_key: which key in data file objects represents image_id
+    - @property text_key: which key in data file objects represents text
+
+    Note: Assumes data files are named <dt>.json
+
+    @abstractmethod image_id_to_image_path() must be implemented in subclass
+
+    Example with the key defaults (but the keys can be customized):
+
+    .. code-block:: python
+
+        obs = {
+            'text': <caption>,
+            'image': <image features if specified else image>
+        }
+    """
+
+    def __init__(self, opt, shared=None):
+        super().__init__(opt, shared)
+        self.opt = opt
+        self.task = opt['task'].split(':')[1] if ':' in opt['task'] else opt['task']
+        self.data_path = self.get_data_path(opt)
+        self.data = self.load_data(self.data_path, self.opt)
+        self.datatype = opt.get('datatype').split(':')[0]
+
+        # Example of available models: 'resnet152', 'resnext101_32x48d_wsl',
+        # and ImageLoader supports other resnet and resnext models too
+        # Raises an Exception if not valid
+        self._validate_image_mode_name(opt.get('image_mode'))
+
+        # IMPORTANT NOTE: this teacher will be instantiated twice. The first
+        # by build_dict in which case the image_mode is to 'no_image_model' to
+        # avoid calculating image features twice.
+        self.image_mode = opt.get('image_mode')
+
+        # Not using default image_mode paramater b/c there is a normalization
+        # (or bug) somewhere in build_dict that is setting it to none
+        self.include_image = opt.get('image_mode') != 'no_image_model'
+
+        self.image_path = self.get_image_path(opt)
+        self.image_loader = None
+        self.image_features_dim = opt.get('image_features_dim')
+        self.blank_image_features = torch.FloatTensor(self.image_features_dim).fill_(0)
+
+        if shared and 'data' in shared:
+            self.data = shared['data']
+            self.image_loader = shared['image_loader']
+            if 'image_features_dict' in shared:
+                self.image_features_dict = shared['image_features_dict']
+        elif self.include_image:
+            self.setup_image_features(self.data_path)
+        else:
+            # This will happen when building the dictionary - is normal
+            # build_dict sets image_mode to 'none'
+            warn_once('AbstractImageTeacher self.include_image was False')
+            self.image_features_dict = None
+
+        # TODO: won't need this after we have proper logging levels set
+        self.__verbose = False
+
+        self.reset()
+
+    def get_available_image_mode_names(self):
+        """
+        Available image model names.
+
+        resnet and resnext variants available from the ImageLoader. resnext101_XXXXX_wsl
+        is the open-sourced FB AI model (960m images, 1.5k hashtags, finetuned on
+        ImageNet).
+        """
+        available_model_names = ImageLoader.get_available_model_names()
+        return ['no_image_model', 'raw', 'ascii'] + available_model_names
+
+    def _validate_image_mode_name(self, a):
+        """
+        Validate the image_mode passed in.
+
+        Needed because image_mode used elsewhere in ParlAI is not always consistent with
+        what the image teacher allows.
+        """
+        if not isinstance(a, str):
+            raise argparse.ArgumentTypeError(
+                '%s must be a string representing image model name' % a
+            )
+        available_model_names = self.get_available_image_mode_names()
+        if a not in available_model_names:
+            raise argparse.ArgumentTypeError(
+                '\"%s\" unknown image model name. Choose from: %s. Currently suggested resnet is resnet152 and resnext is resnext101_32x48d_wsl.'
+                % (a, available_model_names)
+            )
+        return a
+
+    @classmethod
+    def add_cmdline_args(cls, argparser):
+        # Be sure to call super() if overriding this method b/c
+        # AbstractImageTeacher has necessary params
+        agent = argparser.add_argument_group('AbstractImageTeacher Arguments')
+        agent.add_argument(
+            '--image-path',
+            type=str,
+            default=None,
+            help='Optional argument to specify where images for dataset are'
+            'stored if already downloaded. Most tasks will download the images'
+            'if not present on the < datapath > / < task > _images / * and * if'
+            'this argument is not specified.',
+        )
+
+        agent.add_argument(
+            '--image-features-dim',
+            type=int,
+            default=2048,
+            help='Specify the size of image features Tensors.',
+        )
+
+    @property
+    def image_id_key(self):
+        """
+        Which key in the input data dict objects uniquely identify each image.
+
+        Common image keys are "image_id" or "image_num". May be implemented by subclass.
+        """
+        return 'image_id'
+
+    @property
+    def text_key(self):
+        """
+        Which key in the input data dict objects identifies the text.
+
+        Common keys are "text" or "comment". May be implemented by subclass.
+        """
+        return 'text'
+
+    @abstractmethod
+    def image_id_to_image_path(self, image_id):
+        """
+        Get the path of the image on disk.
+
+        Must be implemented by subclass.
+        """
+        pass
+
+    def get_data_path(self, opt):
+        """
+        Determines path to the data file.
+        """
+        task_name = opt['task'].split(':')[1] if ':' in opt['task'] else opt['task']
+        data_path = os.path.join(opt['datapath'], task_name)
+        return data_path
+
+    def get_image_path(self, opt):
+        """
+        Return the path to the data directory and to the image directory.
+
+        Is based on opt fields: task, datatype (train, valid, test), datapath.
+
+        Subclass can override this.
+        """
+        data_path = self.get_data_path(opt)
+        if opt.get('image_path', None):
+            image_path = opt['image_path']
+        else:
+            # other common choice: .join(opt['datapath'], task_name + '_images')
+            image_path = os.path.join(data_path, 'images')
+
+        return image_path
+
+    def get_image_features_path(self, task, image_model_name, dt):
+        """
+        Image features for the dataset images are stored here.
+
+        Can be overriden in subclass to use custom paths. Image features can be manually
+        copied into this directory or in the case of ImageLoader eligible models, they
+        will be built and stored here if not already there.
+        """
+        # In default implementation, self.data_path already has task name added
+        image_features_path = os.path.join(self.data_path, 'image_features')
+
+        if not os.path.isdir(image_features_path):
+            os.makedirs(image_features_path)
+
+        return os.path.join(
+            image_features_path, '%s_%s_%s_features_dict' % (task, image_model_name, dt)
+        )
+
+    def is_image_mode_buildable(self, model_name):
+        """
+        Is buildable if features can be calculated by ImageLoader.
+
+        Users may wish to compute features for the dataset offline and use in the model,
+        in which case, the image model should return False and get_image_features()
+        should be overriden in subclass.
+        """
+        return model_name in ImageLoader.get_available_model_names()
+
+    def load_data(self, data_path, opt):
+        """
+        Loading the data file, which is the index to the images and text.
+
+        It is often a .json file with the name of the <datatype>.json (i.e.
+        train.json). Stores in self.data.
+
+        Can be override by subclass.
+        """
+
+        dt = opt['datatype'].split(':')[0]
+
+        # Sometimes file is named "val" instead of "valid"
+        if dt not in ['train', 'valid', 'val', 'test']:
+            raise Exception(
+                'Unknown dt parameter: %s. Expected either "train", "valid", or "test".'
+                % dt
+            )
+
+        # Assumes file is train.json or valid.json named
+        data_file = os.path.join(self.data_path, '%s.json' % dt)
+
+        # Load the text data and image number indexes
+        with open(data_file) as f:
+            self.data = json.load(f)
+
+        if len(self.data) > 0 and self.image_id_key not in self.data[0]:
+            # Data doesn't have a "image_id" like field so add the index in the file to the data
+            for idx, d in enumerate(self.data):
+                d[self.image_id_key] = idx
+
+        return self.data
+
+    def setup_image_features(self, data_path):
+        """
+        Load text and image data.
+
+        The image features all live in dicts by default in <data_path>/
+        image_features/ but get_image_features_path() above can be overriden by
+        subclass to put them elsewhere.
+
+        In the (very odd) case that the resnet or resnext dicts (models
+        buildable using ImageLoader) are not found, we build them.
+        """
+        if self.image_mode in ['raw', 'ascii']:
+            self.image_features_dict = None
+            self.image_loader = ImageLoader(self.opt)
+            return
+        image_mode_features_dict_path = self.get_image_features_path(
+            self.task, self.image_mode, self.datatype
+        )
+
+        if os.path.isfile(image_mode_features_dict_path):
+            print(
+                f'Loading existing image features dict for model: {self.image_mode} at: {image_mode_features_dict_path}'
+            )
+            self.image_features_dict = torch.load(
+                image_mode_features_dict_path, map_location='cpu'
+            )
+        else:
+            print(f'No existing image features, attempting to build.')
+            if self.is_image_mode_buildable(self.image_mode):
+                # TODO: Awkward to modify the input opt but needed to use
+                # TODO: ImageLoader functionality. Is from comment_battle,
+                # TODO: will refactor this at some point soon most likely
+                image_loader_opt = self.opt.copy()
+                image_loader_opt['image_mode'] = (
+                    self.image_mode if self.include_image else 'no_image_model'
+                )
+
+                image_loader_opt['image_size'] = 256
+                image_loader_opt['image_cropsize'] = 224
+                self.image_loader = ImageLoader(image_loader_opt)
+
+                # try to build with ImageLoader (i.e. resenet/resnext variants)
+                self.image_features_dict = self._build_image_features_dict(
+                    self.data_path, self.datatype, image_mode_features_dict_path
+                )
+            else:
+                raise RuntimeError(
+                    'Image model: %s is not buildable by ImageLoader but does'
+                    'not already exist on disk as an image features dict for'
+                    'this dataset.' % self.image_mode
+                )
+
+    def _build_image_features_dict(self, data_path, dt, store_dict_path):
+        """
+        Build resne(x)t image features with ImageLoader.
+
+        (Or anything handleable by ImageLoader) and save to path. Only called if we
+        haven't already built the dict before.
+        """
+        image_features_dict = {}
+        total = len(self.data)
+        import tqdm
+
+        pbar = tqdm.tqdm(
+            total=total,
+            unit='cand',
+            unit_scale=True,
+            desc='Building image features dict for %s with ImageLoader.'
+            % self.image_mode,
+        )
+        num = 0
+        for ex in self.data:
+            img_id = ex[self.image_id_key]
+            img_path = self.image_id_to_image_path(img_id)
+            image = self.image_loader.load(img_path).detach()
+            image = image[0, :, 0, 0]
+            image_features_dict[img_id] = image
+            num += 1
+            pbar.update(1)
+            if num % 1000 == 0:
+                print(f'Processing image index: {num}')
+        torch.save(image_features_dict, store_dict_path)
+        return image_features_dict
+
+    def reset(self):
+        super().reset()
+        self.example = None
+
+    def num_episodes(self):
+        return self.num_examples()
+
+    def num_examples(self):
+        return len(self.data)
+
+    def get_image_features(self, example):
+        """
+        Get image features for example.
+
+        Can be overrided in subclass for different behavior. For large datasets, it may
+        be more appropriate to use the ImageLoader.load() method to load image features
+        (as this is essentially streaming the features from disk, so that we do not have
+        to load a large image feature dict in memory). #TODO Could be the default option
+        if we are using -dt train:stream
+        """
+        if self.image_mode in ['raw', 'ascii']:
+            try:
+                image = self.image_loader.load(
+                    self.image_id_to_image_path(example['image_id'])
+                )
+            except FileNotFoundError:
+                # No Image Here
+                image = None
+            return image
+
+        key = str(example[self.image_id_key])
+        if not self.include_image or key not in self.image_features_dict:
+            image_features = self.blank_image_features
+        else:
+            image_features = self.image_features_dict[key]
+        return image_features
+
+    def get(self, episode_idx, entry_idx=0):
+        """
+        Override this in subclass if your data should be handled in a different format.
+        """
+        example = self.data[episode_idx]
+        image_features = self.get_image_features(example)
+        return {
+            'labels': [example[self.text_key]],
+            'image': image_features,
+            'episode_idx': episode_idx,
+            'episode_done': True,
+        }
+
+    def share(self):
+        shared = super().share()
+        shared['data'] = self.data
+        shared['image_loader'] = self.image_loader
+        if hasattr(self, 'image_features_dict'):
+            shared['image_features_dict'] = self.image_features_dict
+        return shared
+
+
+class MultiTaskTeacher(Teacher):
+    """
+    MultiTaskTeacher which teaches multiple tasks.
+
+    Creates a teacher that is actually a set of teachers each based on a task
+    string -- each of these teachers will get called in turn,
+    either randomly or in order.  They are all in the same world (they are the
+    same agent switching tasks).
+
+    The task string format is described for the ``create_task_agents()``
+    function above.
+    """
+
+    def __init__(self, opt: Opt, shared=None):
+        self.tasks: List[Agent] = []
+        self.opt = opt
+
+        self.id = opt['task']
+        if shared and 'tasks' in shared:
+            self.tasks = [create_agent_from_shared(t) for t in shared['tasks']]
+        else:
+            tasks = opt['task'].split(',')
+            for k in tasks:
+                k = k.strip()
+                if k:
+                    opt_singletask = copy.deepcopy(opt)
+                    opt_singletask['task'] = k
+                    self.tasks.extend(create_task_agent_from_taskname(opt_singletask))
+        self.task_idx = -1
+        self.new_task = True
+        self.random = opt.get('datatype') == 'train'
+        # Make multi-task task probabilities.
+        self.cum_task_weights = [1] * len(self.tasks)
+        self.task_choices = range(len(self.tasks))
+        weights = self.opt.get('multitask_weights', [1])
+        sum = 0
+        for i in self.task_choices:
+            if len(weights) > i:
+                weight = weights[i]
+            else:
+                weight = 1
+            self.cum_task_weights[i] = weight + sum
+            sum += weight
+
+    def num_examples(self):
+        """
+        Return the number of examples.
+        """
+        if not hasattr(self, 'num_exs'):
+            # num_examples is sum of all examples in all tasks
+            tasks_num_exs = [t.num_examples() for t in self.tasks]
+            if any(num is None for num in tasks_num_exs):
+                self.num_exs = None
+            else:
+                self.num_exs = sum(tasks_num_exs)
+        return self.num_exs
+
+    def num_episodes(self):
+        """
+        Return the number of episodes.
+        """
+        if not hasattr(self, 'num_eps'):
+            # num_episodes is sum of all num_episodes in all tasks
+            tasks_num_eps = [t.num_episodes() for t in self.tasks]
+            if any(num is None for num in tasks_num_eps):
+                self.num_eps = None
+            else:
+                self.num_eps = sum(tasks_num_eps)
+        return self.num_eps
+
+    def observe(self, observation):
+        """
+        Make an observation.
+        """
+        return self.tasks[self.task_idx].observe(observation)
+
+    def act(self):
+        """
+        Act on the previous observation.
+        """
+        if self.new_task:
+            self.new_task = False
+            if self.random:
+                # select random teacher
+                self.task_idx = random.choices(
+                    self.task_choices, cum_weights=self.cum_task_weights
+                )[0]
+            else:
+                # do at most one full loop looking for unfinished task
+                for _ in range(len(self.tasks)):
+                    self.task_idx = (self.task_idx + 1) % len(self.tasks)
+                    if not self.tasks[self.task_idx].epoch_done():
+                        # if this task has examples ready, break
+                        break
+                if self.tasks[self.task_idx].epoch_done():
+                    # all tasks are done, so return empty action table
+                    return {'episode_done': True}
+        t = self.tasks[self.task_idx].act()
+        if t['episode_done']:
+            self.new_task = True
+        return t
+
+    def epoch_done(self):
+        """
+        Return whether all subtasks are completed.
+        """
+        for t in self.tasks:
+            if not t.epoch_done():
+                return False
+        return True
+
+    # return transformed metrics showing total examples and accuracy if avail.
+    def report(self):
+        """
+        Report aggregated metrics across all subtasks.
+        """
+        return aggregate_named_reports(
+            {t.getID(): t.report() for t in self.tasks},
+            micro_average=self.opt.get('aggregate_micro', False),
+        )
+
+    def reset(self):
+        """
+        Reset all subtasks.
+        """
+        for t in self.tasks:
+            t.reset()
+
+    def reset_metrics(self):
+        """
+        Reset metrics for each subtask.
+        """
+        for t in self.tasks:
+            t.reset_metrics()
+
+    def save(self):
+        """
+        Save each subtask.
+        """
+        for t in self.tasks:
+            t.save()
+
+    def share(self):
+        """
+        Shares this teacher by sharing each subtask.
+        """
+        shared = {}
+        shared['class'] = type(self)
+        shared['opt'] = self.opt
+        shared['tasks'] = [t.share() for t in self.tasks]
+        return shared
+
+    def shutdown(self):
+        """
+        Shutdown each agent.
+        """
+        for t in self.tasks:
+            t.shutdown()
+
+    def update_counters(self):
+        for t in self.tasks:
+            t.update_counters()
+
+
+class ChunkTeacher(FixedDialogTeacher, ABC):
+    """
+    Useful for loading large amounts of data.
+
+    Data is separated into chunks and loaded one chunk at a time. Loads the data off of
+    the main thread.
+    """
+
+    def __init__(self, opt, shared=None):
+        super().__init__(opt, shared)
+        self.buffersize = self.get_buffersize()
+
+        if 'stream' not in opt['datatype']:
+            raise ValueError('Chunk teacher should be used with streaming. ')
+        if opt['numthreads'] > 1:
+            raise ValueError('Chunk teacher is not compatible with Hogwild.')
+
+        self.set_datasettings(opt['datatype'])
+
+        if (
+            shared is None
+            and self.is_train
+            and self.opt.get('distributed_world_size') is not None
+        ):
+            dws = int(self.opt['distributed_world_size'])
+            rank = int(self.opt['rank'])
+            self.fold_chunks = [c for c in self.fold_chunks if c % dws == rank]
+
+        if shared is not None:
+            self.is_root_teacher = False
+            self.chunks = shared['chunks']
+            self.samples = shared['samples']
+            self.rng = shared['rng']
+        else:
+            self.is_root_teacher = True
+            self.samples = queue.Queue(maxsize=self.buffersize)
+            self.chunks = queue.Queue()
+            if self.is_train:
+                # TODO: possible need a fixed seed here in the future
+                self.rng = random.Random()
+            else:
+                self.rng = random.Random(42)
+            self._enqueue_chunks()
+            # launch queue loader on the main thread
+            self._enqueue_request()
+
+        self.episode_done = True
+
+    def _get_data_folder(self):
+        if not self.opt.get('datafile'):
+            raise RuntimeError(
+                'Must specify datafile or override this function '
+                'to return the data folder.'
+            )
+
+        return self.opt['datafile']
+
+    @abstractmethod
+    def get_num_samples(self, datatype: str) -> Tuple[int, int]:
+        """
+        [Abstract] Return the number of samples.
+
+        Returns a tuple of (num_examples, num_episodes) based on the data split.
+        """
+        pass
+
+    @abstractmethod
+    def get_fold_chunks(self, datatype: str) -> List[int]:  # type: ignore
+        """
+        [Abstract] Return a list of chunk IDs (integer).
+
+        Given the datatype (train/test/valid), return the list of chunk IDs that
+        correspond to that split.
+        """
+        pass
+
+    def get_buffersize(self):
+        """
+        Size of buffer.
+
+        Override this in your child class to change the buffer size.
+        """
+        return 100000
+
+    def set_datasettings(self, datatype):
+        self.folder = self._get_data_folder()
+        self.num_exs, self.num_eps = self.get_num_samples(datatype)
+        self.fold_chunks = self.get_fold_chunks(datatype)
+
+        self.is_train = 'train' in datatype and 'evalmode' not in datatype
+
+    def share(self):
+        shared = super().share()
+        shared['samples'] = self.samples
+        shared['chunks'] = self.chunks
+        shared['rng'] = self.rng
+        return shared
+
+    def _setup_data(self, datatype):
+        """
+        Passthrough.
+        """
+        pass
+
+    def num_episodes(self):
+        return self.num_eps
+
+    def num_examples(self):
+        return self.num_exs
+
+    def _enqueue_request(self):
+        """
+        Queue a request for loading to the data loader.
+        """
+        self.data_loader.request_load(self.receive_data, self.get_chunk, ())
+
+    def receive_data(self, future):
+        """
+        Loads data.
+
+        Load data into self.samples until buffersize is reached.
+        """
+        data = future.result()
+        if data is None:
+            return
+        while data:
+            # self.samples is a queue with maxsize
+            # self.buffersize, so will block if the
+            # buffer gets full
+            self.samples.put(data.pop(0))
+        # and start loading the next chunk
+        self._enqueue_request()
+
+    def _enqueue_chunks(self):
+        """
+        Shuffles and queues fold chunks for loading.
+        """
+        if self.is_train:
+            self.rng.shuffle(self.fold_chunks)
+        for c in self.fold_chunks:
+            self.chunks.put(c)
+
+    @abstractmethod
+    def load_from_chunk(self, chunk_idx: int):
+        """
+        [Abstract] Given the chunk index, load examples from that chunk.
+
+        Return a list of tuples. The function `_create_message` will take these tuples
+        to form the Message object that is returned by the teacher.
+        """
+        pass
+
+    @abstractmethod
+    def create_message(self, queue_output) -> 'Message':
+        """
+        [Abstract] Given the tuple output of the queue, return an act.
+        """
+        pass
+
+    def get_chunk(self):
+        """
+        Refill the buffer.
+        """
+        if self.chunks.empty():
+            if self.is_train:
+                self._enqueue_chunks()
+            else:
+                # if we're in valid/test, we need to actually signal the end
+                return None
+
+        next_chunk = self.chunks.get()
+        # abstract method `load_from_chunk` returns a list of tuples
+        output = self.load_from_chunk(next_chunk)
+
+        if self.is_train:
+            # randomize the samples
+            random.Random().shuffle(output)
+        else:
+            random.Random(42).shuffle(output)
+        return output
+
+    def get(self, episode_idx, entry_idx=0):
+        queue_output = self.samples.get()
+        if queue_output is None:
+            return None
+
+        # create a Message object from the queue output
+        return self.create_message(queue_output)
+
+    def _drain(self, q):
+        while not q.empty():
+            try:
+                q.get()
+            except queue.Empty:
+                return
+
+    def reset(self):
+        super().reset()
+        if self.is_root_teacher:
+            # drain the queues and refill the chunk queue with a new epoch.
+            # additionally, we have to relaunch the loader
+            self._drain(self.samples)
+            self._drain(self.chunks)
+            self._enqueue_chunks()
+            self._enqueue_request()
+
+
+def _add_task_flags_to_agent_opt(agent, opt: Opt, flags):
+    """
+    Handle task flags provided by the task name itself.
+
+    With this you can set specific opts with `-t task:flag=foo`.
+    """
+    fl = flags.split(':')
+    task = []
+    for f in fl:
+        if '=' in f:
+            one_flag = f.split('=')
+            key = one_flag[0].replace('-', '_')
+            raw_value = one_flag[1].replace(';', ':')
+
+            # Convert to bool/int/float if necessary
+            if raw_value.lower() == 'true':
+                value = True
+            elif raw_value.lower() == 'false':
+                value = False
+            else:
+                try:
+                    value = int(raw_value)  # type: ignore
+                except ValueError:
+                    try:
+                        value = float(raw_value)  # type: ignore
+                    except ValueError:
+                        value = raw_value  # type: ignore
+
+            opt[key] = value
+        else:
+            task.append(f)
+    opt['task'] = ':'.join(task)
+
+
+def create_task_agent_from_taskname(opt: Opt):
+    """
+    Create task agent(s) assuming the input ``task_dir:teacher_class``.
+
+    e.g. def_string is a shorthand path like ``babi:Task1k:1`` or ``#babi`` or a
+    complete path like ``parlai.tasks.babi.agents:Task1kTeacher:1``, which essentially
+    performs ``from parlai.tasks.babi import Task1kTeacher`` with the parameter ``1`` in
+    ``opt['task']`` to be used by the class ``Task1kTeacher``.
+    """
+    if not opt.get('task'):
+        raise RuntimeError(
+            'No task specified. Please select a task with ' + '--task {task_name}.'
+        )
+    if ',' not in opt['task']:
+        # Single task
+        teacher_class = load_teacher_module(opt['task'])
+        _add_task_flags_to_agent_opt(teacher_class, opt, opt['task'])
+        task_agents = teacher_class(opt)
+        if type(task_agents) != list:
+            task_agents = [task_agents]
+        return task_agents
+    else:
+        # Multitask teacher/agent
+        task_agents = MultiTaskTeacher(opt)
+        if type(task_agents) != list:
+            task_agents = [task_agents]
+        return task_agents

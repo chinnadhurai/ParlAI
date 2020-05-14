@@ -3,9 +3,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
-from parlai.core.teachers import FbDialogTeacher
-from parlai.core.agents import MultiTaskTeacher
+from parlai.core.teachers import FbDialogTeacher, MultiTaskTeacher
 from .build import build
 
 import copy
@@ -17,9 +15,13 @@ def _path(exsz, task, opt, dt=''):
     build(opt)
     if dt == '':
         dt = opt['datatype'].split(':')[0]
-    return os.path.join(opt['datapath'], 'bAbI', 'tasks_1-20_v1-2',
-                        'en-valid{exsz}-nosf'.format(exsz=exsz),
-                        'qa{task}_{type}.txt'.format(task=task, type=dt))
+    return os.path.join(
+        opt['datapath'],
+        'bAbI',
+        'tasks_1-20_v1-2',
+        'en-valid{exsz}-nosf'.format(exsz=exsz),
+        'qa{task}_{type}.txt'.format(task=task, type=dt),
+    )
 
 
 def mod_labels(ys, task):
@@ -42,10 +44,12 @@ def mod_labels(ys, task):
 # Single bAbI task (1k training).
 class Task1kTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
-        task = opt.get('task', 'babi:Task1k:1')
-        self.task_num = task.split(':')[2]
+        default = '1'
+        task = opt.get('task', f'babi:Task1k:{default}')
+        self.task_num = task.split(':')[2] if len(task.split(':')) >= 3 else default
+        # Default to self.task_num == '1' if not specified
         opt['datafile'] = _path('', self.task_num, opt)
-        opt['cands_datafile'] = _path('', task.split(':')[2], opt, 'train')
+        opt['cands_datafile'] = _path('', self.task_num, opt, 'train')
         super().__init__(opt, shared)
 
     def setup_data(self, path):
@@ -60,10 +64,12 @@ class Task1kTeacher(FbDialogTeacher):
 # Single bAbI task (10k training).
 class Task10kTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
-        task = opt.get('task', 'babi:Task10k:1')
-        self.task_num = task.split(':')[2]
+        default = '1'
+        task = opt.get('task', f'babi:Task10k:{default}')
+        self.task_num = task.split(':')[2] if len(task.split(':')) >= 3 else default
+        # Default to self.task_num == '1' if not specified
         opt['datafile'] = _path('-10k', self.task_num, opt)
-        opt['cands_datafile'] = _path('-10k', task.split(':')[2], opt, 'train')
+        opt['cands_datafile'] = _path('-10k', self.task_num, opt, 'train')
         super().__init__(opt, shared)
 
     def setup_data(self, path):

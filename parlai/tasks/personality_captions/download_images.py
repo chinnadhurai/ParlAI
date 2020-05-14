@@ -5,8 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 import os
 import json
-import tqdm
-from parlai.core.build_data import download
+from parlai.core.build_data import download_multiprocess
 from parlai.core.params import ParlaiParser
 import parlai.core.build_data as build_data
 
@@ -19,19 +18,24 @@ def download_images(opt, task='personality_captions'):
         'Please confirm that you have obtained permission '
         'to work with the YFCC100m dataset, as outlined by the steps '
         'listed at '
-        'https://multimediacommons.wordpress.com/yfcc100m-core-dataset/ [Y/y]: ')
+        'https://multimediacommons.wordpress.com/yfcc100m-core-dataset/ [Y/y]: '
+    )
     if response.lower() != 'y':
-        raise RuntimeError('In order to use the images from this dataset, '
-                           'you must obtain permission from the webpage above.')
+        raise RuntimeError(
+            'In order to use the images from this dataset, '
+            'you must obtain permission from the webpage above.'
+        )
     response = input(
         'NOTE: This script will download each image individually from the '
         's3 server on which the images are hosted. This will take a *very '
         'long* time. Are you sure you would like to continue? [Y/y]: '
     )
     if response.lower() != 'y':
-        raise RuntimeError('If you have access to the images, please specify '
-                           'the path to the folder via the `--yfcc-path` '
-                           'command line argument.')
+        raise RuntimeError(
+            'If you have access to the images, please specify '
+            'the path to the folder via the `--yfcc-path` '
+            'command line argument.'
+        )
     image_prefix = 'https://multimedia-commons.s3-us-west-2.amazonaws.com/data/images'
     hashes = []
     dts = ['train', 'val', 'test']
@@ -44,13 +48,12 @@ def download_images(opt, task='personality_captions'):
     os.makedirs(image_path, exist_ok=True)
 
     print('[downloading images to {}]'.format(image_path))
-    for _, (p_hash) in enumerate(tqdm.tqdm(hashes, unit='img')):
-        image_url = '{}/{}/{}/{}.jpg'.format(
-            image_prefix,
-            p_hash[:3],
-            p_hash[3:6],
-            p_hash)
-        download(image_url, image_path, '{}.jpg'.format(p_hash))
+    image_urls = [
+        f"{image_prefix}/{p_hash[:3]}/{p_hash[3:6]}/{p_hash}.jpg" for p_hash in hashes
+    ]
+    download_multiprocess(
+        image_urls, image_path, dest_filenames=[f"{h}.jpg" for h in hashes]
+    )
     build_data.mark_done(image_path, version)
 
 

@@ -4,15 +4,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from parlai.core.utils import Timer
-from parlai.core.utils import round_sigfigs
-from parlai.core.utils import set_namedtuple_defaults
-from parlai.core.utils import padded_tensor
-from parlai.core.utils import argsort
+from parlai.core.opt import Opt
+from parlai.utils.misc import Timer, round_sigfigs, set_namedtuple_defaults
+import parlai.utils.strings as string_utils
+from copy import deepcopy
 import time
 import unittest
-import torch
-import numpy as np
 
 
 class TestUtils(unittest.TestCase):
@@ -72,12 +69,13 @@ class TestUtils(unittest.TestCase):
 
     def test_setnamedtupledefaults(self):
         from collections import namedtuple
+
         NT = namedtuple("NT", ("a", "b", "c"))
 
         # Shouldn't be able to construct a namedtuple without providing info
         try:
             NT()
-            assert False, "Shouldn't be able to construct namedtuple"
+            self.fail("Shouldn't be able to construct namedtuple")
         except TypeError:
             pass
 
@@ -91,32 +89,45 @@ class TestUtils(unittest.TestCase):
         # Test setting it with something else
         set_namedtuple_defaults(NT, default=1)
         nt = NT()
-        assert nt.a is 1
-        assert nt.b is 1
-        assert nt.c is 1
+        assert nt.a == 1
+        assert nt.b == 1
+        assert nt.c == 1
 
-    def test_padded_tensor(self):
-        # list of lists
-        lol = [[1, 2], [3, 4, 5]]
-        output, lens = padded_tensor(lol)
-        assert np.all(output.numpy() == np.array([[1, 2, 0], [3, 4, 5]]))
-        assert lens == [2, 3]
-        output, _ = padded_tensor(lol, left_padded=True)
-        assert np.all(output.numpy() == np.array([[0, 1, 2], [3, 4, 5]]))
-        output, _ = padded_tensor(lol, pad_idx=99)
-        assert np.all(output.numpy() == np.array([[1, 2, 99], [3, 4, 5]]))
+    def test_opt(self):
+        opt = {'x': 0}
+        opt = Opt(opt)
+        opt['x'] += 1
+        opt['x'] = 10
+        self.assertEqual(opt.history[0][0], 'x', 'History not set properly')
+        self.assertEqual(opt.history[0][1], 1, 'History not set properly')
+        self.assertEqual(opt.history[1][0], 'x', 'History not set properly')
+        self.assertEqual(opt.history[1][1], 10, 'History not set properly')
 
-    def test_argsort(self):
-        keys = [5, 4, 3, 2, 1]
-        items = ["five", "four", "three", "two", "one"]
-        items2 = ["e", "d", "c", "b", "a"]
-        torch_keys = torch.LongTensor(keys)
-        assert argsort(keys, items, items2) == [
-            list(reversed(items)), list(reversed(items2))
-        ]
-        assert argsort(keys, items, items2, descending=True) == [items, items2]
+        opt_copy = deepcopy(opt)
+        self.assertEqual(opt_copy.history[0][1], 1, 'Deepcopy history not set properly')
+        self.assertEqual(
+            opt_copy.history[1][1], 10, 'Deepcopy history not set properly'
+        )
 
-        assert np.all(argsort(torch_keys, torch_keys)[0].numpy() == np.arange(1, 6))
+
+class TestStrings(unittest.TestCase):
+    def test_normalize_reply_version1(self):
+        assert string_utils.normalize_reply("I ' ve a cat .") == "I've a cat."
+        assert (
+            string_utils.normalize_reply("do you think i can dance?")
+            == "Do you think I can dance?"
+        )
+        assert string_utils.normalize_reply("I ' m silly '") == "I'm silly'"
+
+    def test_normalize_reply_version2(self):
+        assert string_utils.normalize_reply("Add a period", 2) == "Add a period."
+        assert string_utils.normalize_reply("Add a period?", 2) == "Add a period?"
+        assert string_utils.normalize_reply("Add a period!", 2) == "Add a period!"
+        assert string_utils.normalize_reply('"Add a period"', 2) == '"add a period"'
+
+    def test_uppercase(self):
+        assert string_utils.uppercase("this is a test") == "This is a test"
+        assert string_utils.uppercase("tEst") == "TEst"
 
 
 if __name__ == '__main__':

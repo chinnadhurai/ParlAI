@@ -3,9 +3,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-"""Base script for running official ConvAI2 validation eval for hits@1.
-This uses a the version of the dataset which contains candidates.
-Leaderboard scores will be run in the same form but on a hidden test set.
+"""
+Base script for running official ConvAI2 validation eval for hits@1.
+
+This uses a the version of the dataset which contains candidates. Leaderboard scores
+will be run in the same form but on a hidden test set.
 """
 
 from parlai.scripts.eval_model import eval_model, setup_args as base_setup_args
@@ -27,6 +29,7 @@ def eval_hits(opt, print_parser):
     report = eval_model(opt, print_parser)
     print('============================')
     print('FINAL Hits@1: ' + str(report['hits@1']))
+    return report
 
 
 if __name__ == '__main__':

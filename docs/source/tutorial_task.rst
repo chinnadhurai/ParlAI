@@ -1,8 +1,3 @@
-..
-  Copyright (c) Facebook, Inc. and its affiliates.
-  This source code is licensed under the MIT license found in the
-  LICENSE file in the root directory of this source tree.
-
 Tasks and Datasets in ParlAI
 ============================
 **Authors**: Alexander Holden Miller, Filipe de Avila Belbute Peres, Jason Weston
@@ -484,7 +479,7 @@ Let's initialize this class first.
         """
         def __init__(self, opt, shared=None):
             super().__init__(opt)
-            self.image_mode = opt.get('image_mode', 'none')
+            self.image_mode = opt.get('image_mode', 'no_image_model')
 
             if shared and 'ques' in shared:
                 # another instance was set up already, just reference its data
@@ -552,7 +547,10 @@ and we only have one question per episode, so we can reuse that definition.
 Next we need to implement the ``get()`` function. This has two arguments: which
 episode we want to pull from, and then the index within that episode of the
 specific example we want. Since every episode has only one entry in this dataset,
-we provide a default for the keyword and ignore it.
+we provide a default for the keyword and ignore it. Actions return from ``get()``
+should be wrapped in the ``Message`` class, defined at ``parlai/core/message.py``,
+which ensures that the fields of the action are not unintentionally edited by
+the agents that observe it.
 
 We also define the DefaultTeacher class to refer to this one.
 This task also includes another teacher which includes multiple choice candidates,
@@ -576,7 +574,7 @@ but we don't include that in this tutorial.
             anno = self.annotation['annotations'][episode_idx]
             action['labels'] = [ans['answer'] for ans in anno['answers']]
 
-        return action
+        return Message(action)
 
 
     class DefaultTeacher(OeTeacher):
@@ -602,14 +600,14 @@ in the background by overriding the ``next_example()`` method of FixedDialogTeac
         ready = None
         # pull up the currently queued example
         if self.example is not None:
-            if self.image_mode != 'none':
+            if self.image_mode != 'no_image_model':
                 # move the image we loaded in the background into the example
                 image = self.data_queue.get()
                 self.example['image'] = image
             ready = (self.example, self.epochDone)
         # get the next base example: super().next_example() calls self.get()
         self.example, self.epochDone = super().next_example()
-        if self.image_mode != 'none' and 'image_id' in self.example:
+        if self.image_mode != 'no_image_model' and 'image_id' in self.example:
             # load the next image in the background
             image_id = self.example['image_id']
             self.submit_load_request(image_id)

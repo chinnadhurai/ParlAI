@@ -10,7 +10,7 @@
 
 from parlai.core.agents import Agent
 from parlai.core.dict import DictionaryAgent
-from parlai.core.utils import maintain_dialog_history, load_cands
+from parlai.utils.misc import maintain_dialog_history, load_cands
 from parlai.core.torch_agent import TorchAgent
 from .modules import Starspace
 
@@ -26,18 +26,19 @@ import json
 
 
 class StarspaceAgent(Agent):
-    """Simple implementation of the starspace algorithm: https://arxiv.org/abs/1709.03856
+    """
+    Simple implementation of the starspace algorithm: https://arxiv.org/abs/1709.03856.
     """
 
     OPTIM_OPTS = {
-        'adadelta': optim.Adadelta,
-        'adagrad': optim.Adagrad,
+        'adadelta': optim.Adadelta,  # type: ignore
+        'adagrad': optim.Adagrad,  # type: ignore
         'adam': optim.Adam,
-        'adamax': optim.Adamax,
-        'asgd': optim.ASGD,
-        'lbfgs': optim.LBFGS,
-        'rmsprop': optim.RMSprop,
-        'rprop': optim.Rprop,
+        'adamax': optim.Adamax,  # type: ignore
+        'asgd': optim.ASGD,  # type: ignore
+        'lbfgs': optim.LBFGS,  # type: ignore
+        'rmsprop': optim.RMSprop,  # type: ignore
+        'rprop': optim.Rprop,  # type: ignore
         'sgd': optim.SGD,
     }
 
@@ -47,63 +48,137 @@ class StarspaceAgent(Agent):
 
     @staticmethod
     def add_cmdline_args(argparser):
-        """Add command-line arguments specifically for this agent."""
+        """
+        Add command-line arguments specifically for this agent.
+        """
         agent = argparser.add_argument_group('StarSpace Arguments')
         agent.add_argument(
-            '-emb', '--embedding-type', default='random',
-            choices=['random', 'glove', 'glove-fixed', 'glove-twitter-fixed',
-                     'fasttext', 'fasttext-fixed', 'fasttext_cc',
-                     'fasttext_cc-fixed'],
+            '-emb',
+            '--embedding-type',
+            default='random',
+            choices=[
+                'random',
+                'glove',
+                'glove-fixed',
+                'fasttext',
+                'fasttext-fixed',
+                'fasttext_cc',
+                'fasttext_cc-fixed',
+            ],
             help='Choose between different strategies for initializing word '
-                 'embeddings. Default is random, but can also preinitialize '
-                 'from Glove or Fasttext. Preinitialized embeddings can also '
-                 'be fixed so they are not updated during training.')
-        agent.add_argument('-esz', '--embeddingsize', type=int, default=128,
-                           help='size of the token embeddings')
-        agent.add_argument('-enorm', '--embeddingnorm', type=float, default=10,
-                           help='max norm of word embeddings')
-        agent.add_argument('-shareEmb', '--share-embeddings', type='bool', default=True,
-                           help='whether LHS and RHS share embeddings')
-        agent.add_argument('--lins', default=0, type=int,
-                           help='If set to 1, add a linear layer between lhs and rhs.')
-        agent.add_argument('-lr', '--learningrate', type=float, default=0.1,
-                           help='learning rate')
-        agent.add_argument('-margin', '--margin', type=float, default=0.1,
-                           help='margin')
-        agent.add_argument('--input_dropout', type=float, default=0,
-                           help='fraction of input/output features to dropout during training')
-        agent.add_argument('-opt', '--optimizer', default='sgd',
-                           choices=StarspaceAgent.OPTIM_OPTS.keys(),
-                           help='Choose between pytorch optimizers. '
-                                'Any member of torch.optim is valid and will '
-                                'be used with default params except learning '
-                                'rate (as specified by -lr).')
-        agent.add_argument('-tr', '--truncate', type=int, default=-1,
-                           help='truncate input & output lengths to speed up '
-                           'training (may reduce accuracy). This fixes all '
-                           'input and output to have a maximum length.')
-        agent.add_argument('-k', '--neg-samples', type=int, default=10,
-                           help='number k of negative samples per example')
-        agent.add_argument('--parrot-neg', type=int, default=0,
-                           help='include query as a negative')
-        agent.add_argument('--tfidf', type='bool', default=False,
-                           help='Use frequency based normalization for embeddings.')
-        agent.add_argument('-cs', '--cache-size', type=int, default=1000,
-                           help='size of negative sample cache to draw from')
-        agent.add_argument('-hist', '--history-length', default=10000, type=int,
-                           help='Number of past tokens to remember. ')
-        agent.add_argument('-histr', '--history-replies',
-                           default='label_else_model', type=str,
-                           choices=['none', 'model', 'label',
-                                    'label_else_model'],
-                           help='Keep replies in the history, or not.')
-        agent.add_argument('-fixedCands', '--fixed-candidates-file',
-                           default=None, type=str,
-                           help='File of cands to use for prediction')
+            'embeddings. Default is random, but can also preinitialize '
+            'from Glove or Fasttext. Preinitialized embeddings can also '
+            'be fixed so they are not updated during training.',
+        )
+        agent.add_argument(
+            '-esz',
+            '--embeddingsize',
+            type=int,
+            default=128,
+            help='size of the token embeddings',
+        )
+        agent.add_argument(
+            '-enorm',
+            '--embeddingnorm',
+            type=float,
+            default=10,
+            help='max norm of word embeddings',
+        )
+        agent.add_argument(
+            '-shareEmb',
+            '--share-embeddings',
+            type='bool',
+            default=True,
+            help='whether LHS and RHS share embeddings',
+        )
+        agent.add_argument(
+            '--lins',
+            default=0,
+            type=int,
+            help='If set to 1, add a linear layer between lhs and rhs.',
+        )
+        agent.add_argument(
+            '-lr', '--learningrate', type=float, default=0.1, help='learning rate'
+        )
+        agent.add_argument(
+            '-margin', '--margin', type=float, default=0.1, help='margin'
+        )
+        agent.add_argument(
+            '--input_dropout',
+            type=float,
+            default=0,
+            help='fraction of input/output features to dropout during training',
+        )
+        agent.add_argument(
+            '-opt',
+            '--optimizer',
+            default='sgd',
+            choices=StarspaceAgent.OPTIM_OPTS.keys(),
+            help='Choose between pytorch optimizers. '
+            'Any member of torch.optim is valid and will '
+            'be used with default params except learning '
+            'rate (as specified by -lr).',
+        )
+        agent.add_argument(
+            '-tr',
+            '--truncate',
+            type=int,
+            default=-1,
+            help='truncate input & output lengths to speed up '
+            'training (may reduce accuracy). This fixes all '
+            'input and output to have a maximum length.',
+        )
+        agent.add_argument(
+            '-k',
+            '--neg-samples',
+            type=int,
+            default=10,
+            help='number k of negative samples per example',
+        )
+        agent.add_argument(
+            '--parrot-neg', type=int, default=0, help='include query as a negative'
+        )
+        agent.add_argument(
+            '--tfidf',
+            type='bool',
+            default=False,
+            help='Use frequency based normalization for embeddings.',
+        )
+        agent.add_argument(
+            '-cs',
+            '--cache-size',
+            type=int,
+            default=1000,
+            help='size of negative sample cache to draw from',
+        )
+        agent.add_argument(
+            '-hist',
+            '--history-length',
+            default=10000,
+            type=int,
+            help='Number of past tokens to remember. ',
+        )
+        agent.add_argument(
+            '-histr',
+            '--history-replies',
+            default='label_else_model',
+            type=str,
+            choices=['none', 'model', 'label', 'label_else_model'],
+            help='Keep replies in the history, or not.',
+        )
+        agent.add_argument(
+            '-fixedCands',
+            '--fixed-candidates-file',
+            default=None,
+            type=str,
+            help='File of cands to use for prediction',
+        )
         StarspaceAgent.dictionary_class().add_cmdline_args(argparser)
 
     def __init__(self, opt, shared=None):
-        """Set up model if shared params not set, otherwise no work to do."""
+        """
+        Set up model if shared params not set, otherwise no work to do.
+        """
         super().__init__(opt, shared)
         opt = self.opt
         self.reset_metrics()
@@ -123,8 +198,10 @@ class StarspaceAgent(Agent):
         else:
             print("[ creating StarspaceAgent ]")
             # this is not a shared instance of this class, so do full init
-            if (opt.get('model_file') and (os.path.isfile(opt.get('model_file') + '.dict')
-                                           or (opt['dict_file'] is None))):
+            if opt.get('model_file') and (
+                os.path.isfile(opt.get('model_file') + '.dict')
+                or (opt['dict_file'] is None)
+            ):
                 # set default dict-file if not set
                 opt['dict_file'] = opt['model_file'] + '.dict'
             # load dictionary and basic tokens & vectors
@@ -153,7 +230,8 @@ class StarspaceAgent(Agent):
             print("[loaded candidates]")
 
     def _init_embeddings(self, log=True):
-        """Copy embeddings from the pretrained embeddings to the lookuptable.
+        """
+        Copy embeddings from the pretrained embeddings to the lookuptable.
 
         :param weight:   weights of lookup table (nn.Embedding/nn.EmbeddingBag)
         :param emb_type: pretrained embedding type
@@ -166,17 +244,21 @@ class StarspaceAgent(Agent):
         cnt = 0
         for w, i in self.dict.tok2ind.items():
             if w in embs.stoi:
-                vec = TorchAgent._project_vec(self,
-                                              embs.vectors[embs.stoi[w]],
-                                              weight.size(1))
+                vec = TorchAgent._project_vec(
+                    self, embs.vectors[embs.stoi[w]], weight.size(1)
+                )
                 weight.data[i] = vec
                 cnt += 1
         if log:
-            print('Initialized embeddings for {} tokens ({}%) from {}.'
-                  ''.format(cnt, round(cnt * 100 / len(self.dict), 1), name))
+            print(
+                'Initialized embeddings for {} tokens ({}%) from {}.'
+                ''.format(cnt, round(cnt * 100 / len(self.dict), 1), name)
+            )
 
     def reset(self):
-        """Reset observation and episode_done."""
+        """
+        Reset observation and episode_done.
+        """
         self.observation = None
         self.episode_done = True
         # set up optimizer
@@ -186,17 +268,20 @@ class StarspaceAgent(Agent):
         self.optimizer = optim_class(self.model.parameters(), **kwargs)
 
     def share(self):
-        """Share internal states between parent and child instances."""
+        """
+        Share internal states between parent and child instances.
+        """
         shared = super().share()
         shared['dict'] = self.dict
         shared['model'] = self.model
         return shared
 
     def override_opt(self, new_opt):
-        """Set overridable opts from loaded opt file.
+        """
+        Set overridable opts from loaded opt file.
 
-        Print out each added key and each overriden key.
-        Only override args specific to the model.
+        Print out each added key and each overriden key. Only override args specific to
+        the model.
         """
         model_args = {'embeddingsize', 'optimizer'}
         for k, v in new_opt.items():
@@ -206,21 +291,31 @@ class StarspaceAgent(Agent):
             if k not in self.opt:
                 print('Adding new option [ {k}: {v} ]'.format(k=k, v=v))
             elif self.opt[k] != v:
-                print('Overriding option [ {k}: {old} => {v}]'.format(
-                      k=k, old=self.opt[k], v=v))
+                print(
+                    'Overriding option [ {k}: {old} => {v}]'.format(
+                        k=k, old=self.opt[k], v=v
+                    )
+                )
             self.opt[k] = v
         return self.opt
 
     def parse(self, text):
-        """Convert string to token indices."""
-        return self.dict.txt2vec(text)
+        """
+        Convert string to token indices.
+        """
+        vec = self.dict.txt2vec(text)
+        if vec == []:
+            vec = [self.dict[self.dict.null_token]]
+        return vec
 
     def t2v(self, text):
         p = self.dict.txt2vec(text)
         return torch.LongTensor(p).unsqueeze(1)
 
     def v2t(self, vec):
-        """Convert token indices to string of tokens."""
+        """
+        Convert token indices to string of tokens.
+        """
         new_vec = []
         for i in vec:
             new_vec.append(i)
@@ -231,10 +326,13 @@ class StarspaceAgent(Agent):
         # shallow copy observation (deep copy can be expensive)
         obs = observation.copy()
         obs['text2vec'] = maintain_dialog_history(
-            self.history, obs,
+            self.history,
+            obs,
             historyLength=self.opt['history_length'],
             useReplies=self.opt['history_replies'],
-            dict=self.dict, useStartEndIndices=False)
+            dict=self.dict,
+            useStartEndIndices=False,
+        )
         self.observation = obs
         return obs
 
@@ -251,7 +349,7 @@ class StarspaceAgent(Agent):
         if cache_sz < 1:
             return negs
         k = self.opt['neg_samples']
-        for i in range(1, k * 3):
+        for _i in range(1, k * 3):
             index = random.randint(0, cache_sz)
             neg = self.ys_cache[index]
             if not self.same(ys, neg):
@@ -273,12 +371,15 @@ class StarspaceAgent(Agent):
             W = self.model.encoder2.lt.weight
         score = torch.Tensor(W.size(0))
         for i in range(W.size(0)):
-            score[i] = torch.nn.functional.cosine_similarity(q, W[i], dim=0).data[0]
+            score[i] = torch.nn.functional.cosine_similarity(q, W[i], dim=0).item()
         val, ind = score.sort(descending=True)
         for i in range(20):
             print(
-                str(ind[i]) + " [" + str(val[i]) + "]: " +
-                self.v2t(torch.Tensor([ind[i]]))
+                str(ind[i])
+                + " ["
+                + str(val[i])
+                + "]: "
+                + self.v2t(torch.Tensor([ind[i]]))
             )
 
     def compute_metrics(self, loss, scores):
@@ -300,8 +401,9 @@ class StarspaceAgent(Agent):
                     xd.append(i)
             if len(xd) == 0:
                 # pick one random thing to put in xd
-                xd.append(x[0][random.randint(0, x.size(1)-1)])
+                xd.append(x[0][random.randint(0, x.size(1) - 1)])
             return torch.LongTensor(xd).unsqueeze(0)
+
         rate = self.opt.get('input_dropout')
         xs2 = dropout(xs, rate)
         ys2 = dropout(ys, rate)
@@ -309,12 +411,13 @@ class StarspaceAgent(Agent):
         for n in negs:
             negs2.append(dropout(n, rate))
         return xs2, ys2, negs2
-    
-    def predict(self, xs, ys=None, cands=None, cands_txt=None, obs=None):
-        """Produce a prediction from our model.
 
-        Update the model using the targets if available, otherwise rank
-        candidates as well if they are available and param is set.
+    def predict(self, xs, ys=None, cands=None, cands_txt=None, obs=None):
+        """
+        Produce a prediction from our model.
+
+        Update the model using the targets if available, otherwise rank candidates as
+        well if they are available and param is set.
         """
         is_training = ys is not None
         if is_training:
@@ -375,14 +478,19 @@ class StarspaceAgent(Agent):
         return [{'id': self.getID()}]
 
     def vectorize(self, observations):
-        """Convert a list of observations into input & target tensors."""
+        """
+        Convert a list of observations into input & target tensors.
+        """
+
         def valid(obs):
             # check if this is an example our model should actually process
             return 'text2vec' in obs and len(obs['text2vec']) > 0
+
         try:
             # valid examples and their indices
-            valid_inds, exs = zip(*[(i, ex) for i, ex in
-                                    enumerate(observations) if valid(ex)])
+            valid_inds, exs = zip(
+                *[(i, ex) for i, ex in enumerate(observations) if valid(ex)]
+            )
         except ValueError:
             # zero examples to process in this batch, so zip failed to unpack
             return None, None, None, None
@@ -469,7 +577,9 @@ class StarspaceAgent(Agent):
         super().shutdown()
 
     def save(self, path=None):
-        """Save model parameters if model_file is set."""
+        """
+        Save model parameters if model_file is set.
+        """
         path = self.opt.get('model_file', None) if path is None else path
         if path and hasattr(self, 'model'):
             data = {}
@@ -482,9 +592,15 @@ class StarspaceAgent(Agent):
                 json.dump(self.opt, handle)
 
     def load(self, path):
-        """Return opt and model states."""
+        """
+        Return opt and model states.
+        """
         print('Loading existing model params from ' + path)
-        data = torch.load(path, map_location=lambda cpu, _: cpu)
+        import parlai.utils.pickle
+
+        data = torch.load(
+            path, map_location=lambda cpu, _: cpu, pickle_module=parlai.utils.pickle
+        )
         self.model.load_state_dict(data['model'])
         self.reset()
         self.optimizer.load_state_dict(data['optimizer'])

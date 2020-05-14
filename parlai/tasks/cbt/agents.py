@@ -3,9 +3,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
-from parlai.core.teachers import FbDialogTeacher
-from parlai.core.agents import MultiTaskTeacher
+from parlai.core.teachers import FbDialogTeacher, MultiTaskTeacher
 from .build import build
 
 import copy
@@ -25,7 +23,8 @@ def _path(task, opt):
         suffix = 'valid_2000ex'
 
     return os.path.join(
-        opt['datapath'], 'CBT', 'CBTest', 'data', task + '_' + suffix + '.txt')
+        opt['datapath'], 'CBT', 'CBTest', 'data', task + '_' + suffix + '.txt'
+    )
 
 
 class NETeacher(FbDialogTeacher):

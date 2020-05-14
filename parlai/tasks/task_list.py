@@ -3,11 +3,23 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-"""This file contains a list of all the tasks, their id and task name, description
-and the tags associated with them.
+"""
+This file contains a list of all the tasks, their id and task name, description and the
+tags associated with them.
 """
 
 task_list = [
+    {
+        "id": "AmazonQA",
+        "display_name": "AmazonQA",
+        "task": "amazon_qa",
+        "tags": ["All", "QA"],
+        "description": (
+            "This dataset contains Question and Answer data from Amazon, "
+            "totaling around 1.4 million answered questions."
+            "Link: http://jmcauley.ucsd.edu/data/amazon/qa/"
+        ),
+    },
     {
         "id": "AQuA",
         "display_name": "AQuA",
@@ -17,7 +29,7 @@ task_list = [
             "Dataset containing algebraic word problems with rationales for "
             "their answers. From Ling et. al. 2017, Link: "
             "https://arxiv.org/pdf/1705.04146.pdf"
-        )
+        ),
     },
     {
         "id": "bAbI-1k",
@@ -52,6 +64,17 @@ task_list = [
         ),
     },
     {
+        "id": "BlendedSkillTalk",
+        "display_name": "Blended Skill Talk",
+        "task": "blended_skill_talk",
+        "tags": ["All", "ChitChat"],
+        "description": (
+            "A dataset of 7k conversations explicitly designed to exhibit multiple "
+            "conversation modes: displaying personality, having empathy, and "
+            "demonstrating knowledge."
+        ),
+    },
+    {
         "id": "BookTest",
         "display_name": "BookTest",
         "task": "booktest",
@@ -74,6 +97,21 @@ task_list = [
         ),
     },
     {
+        "id": "CCPE",
+        "display_name": "Coached Conversational Preference Elicitation",
+        "task": "ccpe",
+        "tags": ["All", "Goal"],
+        "description": (
+            "A dataset consisting of 502 dialogs with 12,000 annotated "
+            "utterances between a user and an assistant discussing movie "
+            "preferences in natural language. It was collected using a "
+            "Wizard-of-Oz methodology between two paid crowd-workers, "
+            "where one worker plays the role of an 'assistant', while "
+            "the other plays the role of a 'user'. From Google, '19. Link: "
+            "https://ai.google/tools/datasets/coached-conversational-preference-elicitation"
+        ),
+    },
+    {
         "id": "COPA",
         "display_name": "Choice of Plausible Alternatives",
         "task": "copa",
@@ -88,10 +126,24 @@ task_list = [
         ),
     },
     {
+        "id": "COQA",
+        "display_name": "Conversational Question Answering Challenge",
+        "task": "coqa",
+        "tags": ["All", "QA"],
+        "description": (
+            "CoQA is a large-scale dataset for building Conversational "
+            "Question Answering systems. The goal of the CoQA challenge "
+            "is to measure the ability of machines to understand a text "
+            "passage and answer a series of interconnected questions that "
+            "appear in a conversation. CoQA is pronounced as coca . See "
+            "https://arxiv.org/abs/1808.07042"
+        ),
+    },
+    {
         "id": "CornellMovie",
         "display_name": "Cornell Movie",
         "task": "cornell_movie",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "Dodeca"],
         "description": (
             "Fictional conversations extracted from raw movie scripts. "
             "Danescu-Niculescu-Mizil & Lee, '11. Link: "
@@ -153,6 +205,29 @@ task_list = [
         ),
     },
     {
+        "id": "dialogue-nli",
+        "display_name": "Dialogue NLI",
+        "task": "dialogue_nli",
+        "tags": ["All", "ChitChat", "NLI"],
+        "description": (
+            "Dialogue NLI is a dataset that addresses the issue of consistency in "
+            "dialogue models. "
+            "See: https://wellecks.github.io/dialogue_nli/"
+        ),
+    },
+    {
+        "id": "dstc7",
+        "display_name": "DSTC7 subtrack 1 - ubuntu",
+        "task": "dstc7",
+        "tags": ["All", "ChitChat"],
+        "description": (
+            "DSTC7 is a competition which provided a dataset of dialogs very "
+            "similar to the ubuntu dataset. In particular, the subtrack 1 "
+            "consists in predicting the next utterance. "
+            "See: https://arxiv.org/pdf/1901.03461.pdf"
+        ),
+    },
+    {
         "id": "FVQA",
         "display_name": "FVQA",
         "task": "fvqa",
@@ -165,7 +240,6 @@ task_list = [
             "supporting fact is represented as a structural triplet, such as "
             "<Cat,CapableOf,ClimbingTrees>.  Link: "
             "https://arxiv.org/abs/1606.05433"
-
         ),
     },
     {
@@ -178,6 +252,32 @@ task_list = [
             "how to divide a set of items, with each agent assigning different "
             "values to each item. From Lewis et al. '17. Link: "
             "https://arxiv.org/abs/1706.05125"
+        ),
+    },
+    {
+        "id": "HotpotQA",
+        "display_name": "HotpotQA",
+        "task": "hotpotqa",
+        "tags": ["All", "QA"],
+        "description": (
+            "HotpotQA is a dataset for multi-hop question answering."
+            "The overall setting is that given some context paragraphs"
+            "(e.g., a few paragraphs, or the entire Web) and a question,"
+            "a QA system answers the question by extracting a span of text"
+            "from the context. It is necessary to perform multi-hop reasoning"
+            "to correctly answer the question."
+            "Link: https://arxiv.org/pdf/1809.09600.pdf"
+        ),
+    },
+    {
+        "id": "LIGHT-Dialogue",
+        "display_name": "LIGHT-Dialogue",
+        "task": "light_dialog",
+        "tags": ["All", "Grounded", "Dodeca"],
+        "description": (
+            "LIGHT is a text adventure game with actions and dialogue collected."
+            "The source data is collected between crowdworkers playing the game."
+            "Link: http://parl.ai/projects/light"
         ),
     },
     {
@@ -259,7 +359,7 @@ task_list = [
         "id": "MultiNLI",
         "display_name": "MultiNLI",
         "task": "multinli",
-        "tags": ["All", "Entailment"],
+        "tags": ["All", "Entailment", "decanlp"],
         "description": (
             "A dataset designed for use in the development and evaluation of "
             "machine learning models for sentence understanding. Each example "
@@ -342,6 +442,36 @@ task_list = [
         ),
     },
     {
+        "id": "QuAC",
+        "display_name": "Question Answering in Context",
+        "task": "quac",
+        "tags": ["All", "QA"],
+        "description": (
+            "Question Answering in Context is a dataset for modeling, "
+            "understanding, and participating in information seeking dialog. Data "
+            "instances consist of an interactive dialog between two crowd workers: "
+            "(1) a student who poses a sequence of freeform questions to learn as "
+            "much as possible about a hidden Wikipedia text, and (2) a teacher who "
+            "answers the questions by providing short excerpts (spans) from the text. "
+            "QuAC introduces challenges not found in existing machine comprehension "
+            "datasets: its questions are often more open-ended, unanswerable, "
+            "or only meaningful within the dialog context. link: "
+            "https://arxiv.org/abs/1808.07036"
+        ),
+    },
+    {
+        "id": "SelfFeedingChatbot",
+        "display_name": "Self-Feeding Chatbot",
+        "task": "self_feeding",
+        "tags": ["diaexp", "diasen", "All"],
+        "description": (
+            "Learning from Dialogue after Deployment. Leveraging user textual "
+            "feedback to improve the chatbot's abilities. "
+            "From Hancock et al. 2019, Link: "
+            "https://arxiv.org/abs/1901.05415"
+        ),
+    },
+    {
         "id": "SimpleQuestions",
         "display_name": "Simple Questions",
         "task": "simplequestions",
@@ -412,10 +542,11 @@ task_list = [
         "id": "Ubuntu",
         "display_name": "Ubuntu",
         "task": "ubuntu",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "Dodeca"],
         "description": (
             "Dialogs between an Ubuntu user and an expert trying to fix issue, "
-            "from Lowe et al. '15. Link: https://arxiv.org/abs/1506.08909"
+            "we use the V2 version, which cleaned the data to some extent. "
+            "From Lowe et al. '15. Link: https://arxiv.org/abs/1506.08909."
         ),
     },
     {
@@ -551,7 +682,7 @@ task_list = [
         "id": "IWSLT14",
         "display_name": "IWSLT14",
         "task": "iwslt14",
-        "tags": ["All", "MT"],
+        "tags": ["All", "MT", "decanlp"],
         "description": (
             "2014 International Workshop on Spoken Language task, currently "
             "only includes en_de and de_en. From Cettolo et al. '12. Link: "
@@ -562,7 +693,7 @@ task_list = [
         "id": "ConvAI2",
         "display_name": "ConvAI2",
         "task": "convai2",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "Dodeca"],
         "description": (
             "A chit-chat dataset based on PersonaChat "
             "(https://arxiv.org/abs/1801.07243) for a NIPS 2018 competition. "
@@ -573,7 +704,7 @@ task_list = [
         "id": "ConvAI_ChitChat",
         "display_name": "ConvAI_ChitChat",
         "task": "convai_chitchat",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "decanlp"],
         "description": (
             "Human-bot dialogues containing free discussions of randomly chosen "
             "paragraphs from SQuAD. Link to dataset: http://convai.io/data/"
@@ -627,10 +758,24 @@ task_list = [
         ),
     },
     {
+        "id": "TaskMaster",
+        "display_name": "TaskMaster-1-2019",
+        "task": "taskmaster",
+        "tags": ["ChitChat", "All"],
+        "description": (
+            "A chit-chat dataset by GoogleAI providing high quality goal-oriented conversations"
+            "The dataset hopes to provoke interest in written vs spoken language"
+            "Both the datasets consists of two-person dialogs:"
+            "Spoken: Created using Wizard of Oz methodology.(woz-dialogs.json)"
+            "Written: Created by crowdsourced workers who were asked to write the full conversation themselves playing roles of both the user and assistant. (self-dialogs.json)"
+            "Link: https://ai.google/tools/datasets/taskmaster-1"
+        ),
+    },
+    {
         "id": "Twitter",
         "display_name": "Twitter",
         "task": "twitter",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "Dodeca"],
         "description": (
             "Twitter data from: https://github.com/Marsan-Ma/chat_corpus/. No "
             "train/valid/test split was provided so 10k for valid and 10k for "
@@ -642,9 +787,7 @@ task_list = [
         "display_name": "Wikipedia",
         "task": 'wikipedia',
         "tags": ["All"],
-        "description": (
-            "Dump of Wikipedia articles from 2/3/18"
-        ),
+        "description": ("Dump of Wikipedia articles from 2/3/18"),
         "notes": (
             "Specify ':full' for the full articles to be returned, otherwise "
             "defaults to ':summary', which provides the first paragraphs. To put "
@@ -680,9 +823,7 @@ task_list = [
         "display_name": "Integration Tests",
         "task": "integration_tests",
         "tags": ["All", "Debug"],
-        "description": (
-            "Artificial tasks for ensuring models perform as expected"
-        ),
+        "description": ("Artificial tasks for ensuring models perform as expected"),
     },
     {
         "id": "ConvAI2_wild_evaluation",
@@ -693,6 +834,96 @@ task_list = [
             "Dataset collected during the wild evaluation of ConvaAI2 participants "
             "bots (http://convai.io). 60% train, 20% valid and 20% test is chosen at "
             "random from the whole dataset."
+        ),
+    },
+    {
+        "id": "sst",
+        "display_name": "SST Sentiment Analysis",
+        "task": "sst",
+        "tags": ["All", "decanlp"],
+        "description": (
+            "Dataset containing sentiment trees of movie reviews. We use the modified "
+            "binary sentence analysis subtask given by the DecaNLP paper here, "
+            "originally from Radford, et. al "
+            "https://nlp.stanford.edu/sentiment/index.html "
+            "https://github.com/openai/generating-reviews-discovering-sentiment/"
+        ),
+    },
+    {
+        "id": "cnn_dm",
+        "display_name": "CNN/DM Summarisation",
+        "task": "cnn_dm",
+        "tags": ["All", "decanlp"],
+        "description": (
+            "Dataset collected from CNN and the Daily Mail with summaries as labels, "
+            "Implemented as part of the DecaNLP task"
+            "Downloaded from https://cs.nyu.edu/~kcho/DMQA/"
+        ),
+    },
+    {
+        "id": "qasrl",
+        "display_name": "QA-SRL Semantic Role Labeling",
+        "task": "qasrl",
+        "tags": ["All", "decanlp"],
+        "description": (
+            "QA dataset implemented as part of the DecaNLP task. More info on the"
+            "dataset can be found here: https://dada.cs.washington.edu/qasrl/"
+        ),
+    },
+    {
+        "id": "qazre",
+        "display_name": "QA-ZRE Relation Extraction",
+        "task": "qazre",
+        "tags": ["All", "decanlp"],
+        "description": (
+            "Zero Shot relation extraction task implemented as part of the DecaNLP "
+            "task. More info on the dataset can be found here:"
+            "http://nlp.cs.washington.edu/zeroshot/"
+        ),
+    },
+    {
+        "id": "woz",
+        "display_name": "WOZ restuarant reservation (Goal-Oriented Dialogue)",
+        "task": "woz",
+        "tags": ["All", "decanlp"],
+        "description": (
+            "Dataset containing dialogues dengotiating a resturant reservation. "
+            "Implemented as part of the DecaNLP task, focused on the change "
+            "in the dialogue state. Original paper: "
+            "https://arxiv.org/abs/1604.04562"
+        ),
+    },
+    {
+        "id": "wikisql",
+        "display_name": "WikiSQL semantic parsing task",
+        "task": "wikisql",
+        "tags": ["All", "decanlp"],
+        "description": (
+            "Dataset for parsing sentences to SQL code, given a table. "
+            "Implemented as part of the DecaNLP task. More info can be found here:"
+            "https://github.com/salesforce/WikiSQL"
+        ),
+    },
+    {
+        "id": "mwsc",
+        "display_name": "MWSC pronoun resolution",
+        "task": "mwsc",
+        "tags": ["All", "decanlp"],
+        "description": "Resolving possible ambiguous pronouns. Implemented as part of the DecaNLP"
+        "task, and can be found on the decaNLP github",
+    },
+    {
+        "id": "decanlp",
+        "display_name": "DecaNLP: The Natural Language Decathlon",
+        "task": "decanlp",
+        "tags": ["All"],
+        "description": (
+            "A collection of 10 tasks (SQuAD, IWSLT, CNN/DM, MNLI, SST, QA‑SRL,"
+            "QA‑ZRE, WOZ, WikiSQL and MWSC) designed to challenge a model with a range "
+            "of different tasks. Note that we use IWSLT 2014 instead of "
+            "2016/2013test/2014test for train/dev/test as given in the DecaNLP paper. "
+            "See paper https://arxiv.org/abs/1806.08730 for more information and "
+            "github: https://github.com/salesforce/decaNLP for data sources"
         ),
     },
     {
@@ -731,6 +962,13 @@ task_list = [
         ),
     },
     {
+        "id": "Image_Chat_Generation",
+        "display_name": "Image_Chat_Generation",
+        "task": "image_chat:Generation",
+        "tags": ["All", "Visual", "ChitChat", "Dodeca"],
+        "description": ("Image Chat task to train generative model"),
+    },
+    {
         "id": "TalkTheWalk",
         "display_name": "Talk the Walk",
         "task": "talkthewalk",
@@ -762,27 +1000,148 @@ task_list = [
         ),
     },
     {
+        "id": "Wizard_of_Wikipedia_Generator",
+        "display_name": "Wizard_of_Wikipedia_Generator",
+        "task": "wizard_of_wikipedia:Generator",
+        "tags": ["All", "ChitChat", "Dodeca"],
+        "description": ("Wizard of Wikipedia task to train generative models"),
+    },
+    {
         "id": "DailyDialog",
         "display_name": "Daily Dialog",
         "task": "dailydialog",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "Dodeca"],
         "description": (
             "A dataset of chitchat dialogues with strong annotations for "
             "topic, emotion and utterance act. This version contains both sides "
             "of every conversation, and uses the official train/valid/test splits "
             "from the original authors. See https://arxiv.org/abs/1710.03957 "
             "for more information."
-        )
+        ),
     },
     {
         "id": "EmpatheticDialogues",
         "display_name": "Empathetic Dialogues",
         "task": "empathetic_dialogues",
-        "tags": ["All", "ChitChat"],
+        "tags": ["All", "ChitChat", "Dodeca"],
         "description": (
             "A dataset of 25k conversations grounded in emotional situations "
             "to facilitate training and evaluating dialogue systems. See "
-            "https://arxiv.org/abs/1811.00207 for more information."
+            "https://arxiv.org/abs/1811.00207 for more information. \n"
+            "Dataset has been released under the CC BY-NC license. \n"
+            "EmpatheticDialoguesTeacher returns examples like so: \n\n"
+            "  - [text]:  context line (previous utterance by 'speaker') \n"
+            "  - [labels]: label line  (current utterance by 'listener') \n\n"
+            "with additional task specific fields: \n\n"
+            "  - [situation]: a 1-3 sentence description of the situation that the conversation is \n"
+            "  - [emotion]: one of 32 emotion words \n\n"
+            "Other optional fields: \n\n"
+            "  - [prepend_ctx]: fasttext prediction on context line - or None \n"
+            "  - [prepend_cand]: fasttext prediction on label line (candidate) - or None \n"
+            "  - [deepmoji_ctx]: vector encoding from deepmoji penultimate layer - or None \n"
+            "  - [deepmoji_cand]: vector encoding from deepmoji penultimate layer for label line (candidate) - or None "
+        ),
+    },
+    {
+        "id": "DialogueSafety",
+        "display_name": "Dialogue Safety",
+        "task": "dialogue_safety",
+        "tags": ["All"],
+        "description": (
+            "Several datasets described in the paper Built it Break it Fix it "
+            "for Dialogue Safety: Robustness from Adversarial Human Attack "
+            "(see https://arxiv.org/abs/1908.06083 for more information). \n"
+            "All datasets are classification tasks in which the goal is to "
+            "determine if the text is offensive or \'safe\'."
+        ),
+    },
+    {
+        "id": "MultiWOZ",
+        "display_name": "MultiWOZ",
+        "task": "multiwoz",
+        "tags": ["All", "Goal"],
+        "description": (
+            "A fully labeled collection of human-written conversations spanning"
+            "over multiple domains and topics."
+            "(see http://dialogue.mi.eng.cam.ac.uk/index.php/corpus/"
+            " for more information). "
+        ),
+    },
+    {
+        "id": "SelfChat",
+        "display_name": "SelfChat",
+        "task": "self_chat",
+        "tags": [],
+        "description": (
+            "Not a dataset, but a generic world for model self-chats. "
+            "(see parlai/scripts/self_chat.py"
+            " for more information). "
+        ),
+    },
+    {
+        "id": "OneCommon",
+        "display_name": "OneCommon",
+        "task": "onecommon",
+        "tags": ["All", "Goal"],
+        "description": (
+            "A collaborative referring task which requires advanced skills "
+            "of common grounding under continuous and partially-observable context. "
+            "This code also includes reference-resolution annotation "
+            "from Udagawa and Aizawa '19. Link: https://github.com/Alab-NII/onecommon"
+        ),
+    },
+    {
+        "id": "IGC",
+        "display_name": "Image Grounded Conversations",
+        "task": "igc",
+        "tags": ["All", "Visual", "ChitChat", "Dodeca"],
+        "description": (
+            "A dataset of (image, context, question, answer) tuples, comprised "
+            "of eventful images taken from Bing, Flickr, and COCO. See "
+            "https://arxiv.org/abs/1701.08251 for more information."
+        ),
+    },
+    {
+        "id": "ANLI",
+        "display_name": "Adversarial Natural Language Inference (ANLI) Corpus",
+        "task": "anli",
+        "tags": ["All", "Entailment", "NLI"],
+        "description": (
+            "The ANLI corpus (version 1.0) is a new large-scale NLI benchmark dataset,"
+            "collected via an iterative, adversarial human-and-model-in-the-loop procedure"
+            "with the labels entailment, contradiction, and neutral. A total of three rounds "
+            "of data are collected that progressively increase in difficulty and complexity."
+            "See https://github.com/facebookresearch/anli and https://arxiv.org/abs/1910.14599 "
+            "for more information."
+        ),
+    },
+    {
+        "id": "NLI",
+        "display_name": "Natural Language Inference (NLI) Corpus",
+        "task": "nli",
+        "tags": ["All", "Entailment"],
+        "description": (
+            "A collection of 3 popular Natural Language Inference(NLI) benchmark tasks: "
+            "ANLI v0.1, MultiNLI 1.0, SNLI 1.0."
+        ),
+    },
+    {
+        "id": "Funpedia",
+        "display_name": "Funpedia",
+        "task": "funpedia",
+        "tags": ["All"],
+        "description": (
+            "Task for rephrasing sentences from Wikipedia conditioned on a persona."
+        ),
+    },
+    {
+        "id": "LIGHTGenderBias",
+        "display_name": "LIGHT Gender Bias",
+        "task": "light_genderation_bias",
+        "tags": ["All"],
+        "description": (
+            "Task for debiasing the LIGHT dataset, all mitigation methods described here: "
+            "<https://arxiv.org/abs/1911.03842>."
         ),
     },
 ]
