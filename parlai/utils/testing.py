@@ -17,6 +17,7 @@ import io
 import signal
 from typing import Tuple, Dict, Any
 from parlai.core.opt import Opt
+import parlai.utils.logging as logging
 
 
 try:
@@ -75,7 +76,7 @@ def skipUnlessGPU(testfn, reason='Test requires a GPU'):
     return unittest.skipUnless(GPU_AVAILABLE, reason)(testfn)
 
 
-def skipUnlessBPE(testfn, reason='Test requires a GPU'):
+def skipUnlessBPE(testfn, reason='Test requires subword NMT'):
     """
     Decorate a test to skip if BPE is not installed.
     """
@@ -134,7 +135,7 @@ class retry(object):
                     return testfn(testself, *args, **kwargs)
                 except testself.failureException:
                     if self.log_retry:
-                        print("Retrying {}".format(testfn))
+                        logging.debug("Retrying {}".format(testfn))
             # last time, actually throw any errors there may be
             return testfn(testself, *args, **kwargs)
 
@@ -274,37 +275,29 @@ def train_model(opt: Opt) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             opt['model_file'] = os.path.join(tmpdir, 'model')
         if 'dict_file' not in opt:
             opt['dict_file'] = os.path.join(tmpdir, 'model.dict')
-        parser = tms.setup_args()
-        # needed at the very least to set the overrides.
-        parser.set_params(**opt)
-        parser.set_params(log_every_n_secs=10)
-        popt = parser.parse_args([], print_args=False)
-        # in some rare cases, like for instance if the model class also
-        # overrides its default params, the params override will not
-        # be taken into account.
-        for k, v in opt.items():
-            popt[k] = v
-        tl = tms.TrainLoop(popt)
-        valid, test = tl.train()
+        # Parse verification
+        valid, test = tms.TrainModel.main(**opt)
 
     return valid, test
 
 
-def eval_model(opt, skip_valid=False, skip_test=False, valid_datatype=None):
+def eval_model(
+    opt, skip_valid=False, skip_test=False, valid_datatype='valid', test_datatype='test'
+):
     """
     Run through an evaluation loop.
 
     :param opt:
         Any non-default options you wish to set.
     :param bool skip_valid:
-        If true skips the valid evaluation, and the second return value will be None.
+        If true skips the valid evaluation, and the first return value will be None.
     :param bool skip_test:
-        If true skips the test evaluation, and the third return value will be None.
+        If true skips the test evaluation, and the second return value will be None.
     :param str valid_datatype:
         If custom datatype required for valid, e.g. train:evalmode, specify here
 
-    :return: (stdout, valid_results, test_results)
-    :rtype: (str, dict, dict)
+    :return: (valid_results, test_results)
+    :rtype: (dict, dict)
 
     If model_file is not in opt, then this helper will create a temporary directory
     to store the model files, and clean up afterwards. You can keep the directory
@@ -312,18 +305,13 @@ def eval_model(opt, skip_valid=False, skip_test=False, valid_datatype=None):
     """
     import parlai.scripts.eval_model as ems
 
-    parser = ems.setup_args()
-    parser.set_params(**opt)
-    parser.set_params(log_every_n_secs=10)
-    popt = parser.parse_args([], print_args=False)
+    if opt.get('model_file') and not opt.get('dict_file'):
+        opt['dict_file'] = opt['model_file'] + '.dict'
 
-    if popt.get('model_file') and not popt.get('dict_file'):
-        popt['dict_file'] = popt['model_file'] + '.dict'
-
-    popt['datatype'] = 'valid' if valid_datatype is None else valid_datatype
-    valid = None if skip_valid else ems.eval_model(popt)
-    popt['datatype'] = 'test'
-    test = None if skip_test else ems.eval_model(popt)
+    opt['datatype'] = 'valid' if valid_datatype is None else valid_datatype
+    valid = None if skip_valid else ems.EvalModel.main(**opt)
+    opt['datatype'] = 'test' if test_datatype is None else test_datatype
+    test = None if skip_test else ems.EvalModel.main(**opt)
 
     return valid, test
 
@@ -339,7 +327,7 @@ def display_data(opt):
 
     parser = dd.setup_args()
     parser.set_params(**opt)
-    popt = parser.parse_args([], print_args=False)
+    popt = parser.parse_args([])
 
     with capture_output() as train_output:
         popt['datatype'] = 'train:stream'
@@ -364,7 +352,7 @@ def display_model(opt) -> Tuple[str, str, str]:
 
     parser = dm.setup_args()
     parser.set_params(**opt)
-    popt = parser.parse_args([], print_args=False)
+    popt = parser.parse_args([])
     with capture_output() as train_output:
         # evalmode so that we don't hit train_step
         popt['datatype'] = 'train:evalmode:stream'
@@ -376,3 +364,96 @@ def display_model(opt) -> Tuple[str, str, str]:
         popt['datatype'] = 'test:stream'
         dm.display_model(popt)
     return (train_output.getvalue(), valid_output.getvalue(), test_output.getvalue())
+
+
+class AutoTeacherTest:
+    def _run_display_data(self, datatype, **kwargs):
+        import parlai.scripts.display_data as dd
+
+        dd.DisplayData.main(
+            task=self.task, datatype=datatype, display_verbose=True, **kwargs
+        )
+
+    def test_train(self):
+        """
+        Test --datatype train.
+        """
+        return self._run_display_data('train')
+
+    def test_train_stream(self):
+        """
+        Test --datatype train:stream.
+        """
+        return self._run_display_data('train:stream')
+
+    def test_train_stream_ordered(self):
+        """
+        Test --datatype train:stream:ordered.
+        """
+        return self._run_display_data('train:stream:ordered')
+
+    def test_valid(self):
+        """
+        Test --datatype valid.
+        """
+        return self._run_display_data('valid')
+
+    def test_valid_stream(self):
+        """
+        Test --datatype valid:stream.
+        """
+        return self._run_display_data('valid:stream')
+
+    def test_test(self):
+        """
+        Test --datatype test.
+        """
+        return self._run_display_data('test')
+
+    def test_test_stream(self):
+        """
+        Test --datatype test:stream.
+        """
+        return self._run_display_data('test:stream')
+
+    def test_bs2_train(self):
+        """
+        Test --datatype train.
+        """
+        return self._run_display_data('train', batchsize=2)
+
+    def test_bs2_train_stream(self):
+        """
+        Test --datatype train:stream.
+        """
+        return self._run_display_data('train:stream', batchsize=2)
+
+    def test_bs2_train_stream_ordered(self):
+        """
+        Test --datatype train:stream:ordered.
+        """
+        return self._run_display_data('train:stream:ordered', batchsize=2)
+
+    def test_bs2_valid(self):
+        """
+        Test --datatype valid.
+        """
+        return self._run_display_data('valid', batchsize=2)
+
+    def test_bs2_valid_stream(self):
+        """
+        Test --datatype valid:stream.
+        """
+        return self._run_display_data('valid:stream', batchsize=2)
+
+    def test_bs2_test(self):
+        """
+        Test --datatype test.
+        """
+        return self._run_display_data('test', batchsize=2)
+
+    def test_bs2_test_stream(self):
+        """
+        Test --datatype test:stream.
+        """
+        return self._run_display_data('test:stream', batchsize=2)

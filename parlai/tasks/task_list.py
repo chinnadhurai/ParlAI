@@ -161,7 +161,7 @@ task_list = [
             "comment on the answer from the teacher. The aim is to find learning "
             "models that use the comments to improve. From Weston '16. Link: "
             "https://arxiv.org/abs/1604.06045. Tasks can be accessed with a "
-            "format like: 'python examples/display_data.py -t "
+            "format like: 'parlai display_data -t "
             "dbll_babi:task:2_p0.5' which specifies task 2, and policy with 0.5 "
             "answers correct, see the paper for more details of the tasks."
         ),
@@ -277,6 +277,19 @@ task_list = [
         "description": (
             "LIGHT is a text adventure game with actions and dialogue collected."
             "The source data is collected between crowdworkers playing the game."
+            "Link: http://parl.ai/projects/light"
+        ),
+    },
+    {
+        "id": "LIGHT-Dialogue-Wild",
+        "display_name": "LIGHT-Dialogue-Wild",
+        "task": "light_dialog_wild",
+        "tags": ["All", "Grounded", "LIGHT"],
+        "description": (
+            " LIGHT is a text adventure game with actions and dialogue."
+            "The WILD dataset here features 41,131+ training episodes of dialogue "
+            "collected from deploying a game as described in "
+            "https://arxiv.org/abs/2008.08076"
             "Link: http://parl.ai/projects/light"
         ),
     },
@@ -969,16 +982,6 @@ task_list = [
         "description": ("Image Chat task to train generative model"),
     },
     {
-        "id": "TalkTheWalk",
-        "display_name": "Talk the Walk",
-        "task": "talkthewalk",
-        "tags": ["All", "Visual"],
-        "description": (
-            "Talk the walk dataset."
-            "See https://arxiv.org/abs/1807.03367 for more information."
-        ),
-    },
-    {
         "id": "Wizard_of_Wikipedia",
         "display_name": "Wizard_of_Wikipedia",
         "task": "wizard_of_wikipedia",
@@ -1142,6 +1145,102 @@ task_list = [
         "description": (
             "Task for debiasing the LIGHT dataset, all mitigation methods described here: "
             "<https://arxiv.org/abs/1911.03842>."
+        ),
+    },
+    {
+        "id": "AirDialogue",
+        "display_name": "AirDialogue",
+        "task": "airdialogue",
+        "tags": ["All", "Goal"],
+        "description": (
+            "Task for goal-oriented dialogue using airplane booking conversations "
+            "between agents and customers. Paper and toolkits for the dataset can be"
+            " found at <https://github.com/google/airdialogue>."
+        ),
+    },
+    {
+        "id": "HollE",
+        "display_name": "Holl-E",
+        "task": "holl_e",
+        "tags": ["All", "ChitChat"],
+        "description": (
+            "Sequence of utterances and responses with background knowledge about"
+            "movies. From the Holl-E dataset. More information found at"
+            " https://github.com/nikitacs16/Holl-E."
+        ),
+    },
+    {
+        "id": "ELI5",
+        "display_name": "ELI5",
+        "task": "eli5",
+        "tags": ["All", "QA"],
+        "description": (
+            "This dataset contains Question and Answer data from Reddit "
+            "explainlikeimfive posts and comments."
+            "Link: https://github.com/facebookresearch/ELI5/"
+        ),
+    },
+    {
+        "id": "ReDial",
+        "display_name": "ReDial",
+        "task": "redial",
+        "tags": ["All", "ChitChat", "Goal"],
+        "description": (
+            "Annotated dataset of dialogues where users recommend movies to eachother."
+            "See https://redialdata.github.io/website/ for more information."
+        ),
+    },
+    {
+        "id": "DREAM",
+        "display_name": "DREAM",
+        "task": "dream",
+        "tags": ["All", "QA"],
+        "description": (
+            "A multiple-choice answering dataset based on multi-turn, multi-party dialogue."
+            "More information can be found at: <https://dataset.org/dream/>."
+        ),
+    },
+    {
+        "id": "C3",
+        "display_name": "C3",
+        "task": "c3",
+        "tags": ["All", "QA"],
+        "description": (
+            "A multiple-choice answering dataset in Chinese based on a prior passage."
+            "More information can be found at: <https://dataset.org/c3/>."
+        ),
+    },
+    {
+        "id": "CommonSenseQA",
+        "display_name": "CommonSenseQA",
+        "task": "commonsenseqa",
+        "tags": ["All", "QA"],
+        "description": (
+            "CommonSenseQA is a multiple-choice Q-A dataset that relies on commonsense "
+            "knowlegde to predict correct answers. More information found at "
+            "<https://www.tau-nlp.org/commonsenseqa>."
+        ),
+    },
+    {
+        "id": "StyleGen",
+        "display_name": "Style-Controlled Generation",
+        "task": "style_gen",
+        "tags": ["All", "ChitChat"],
+        "description": (
+            "Dialogue datasets (BlendedSkillTalk, ConvAI2, EmpatheticDialogues, and "
+            "Wizard of Wikipedia) labeled with personalities taken from the Image-Chat "
+            "dataset. Used for the style-controlled generation project"
+        ),
+    },
+    {
+        "id": "GoogleSGD",
+        "display_name": "GoogleSGD",
+        "task": "google_sgd",
+        "tags": ["All", "Goal"],
+        "description": (
+            "The Schema-Guided Dialogue (SGD) dataset consists of over 20k "
+            "annotated multi-domain, task-oriented conversations between a "
+            "human and a virtual assistant."
         ),
     },
 ]

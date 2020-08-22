@@ -19,6 +19,8 @@ import numpy as np
 import os
 import json
 import re
+import parlai.utils.logging as logging
+from typing import List
 
 RETOK = re.compile(r'\w+|[^\w\s]|\n', re.UNICODE)
 
@@ -323,6 +325,44 @@ class DictionaryAgent(Agent):
             if opt.get('dict_file'):
                 self.save_path = opt['dict_file']
 
+    def add_additional_special_tokens(self, additional_special_tokens: List[str]):
+        """
+        Add additional special tokens to the dictionary.
+
+        Should only be called after initialization of the existing dictionary.
+        """
+        self.additional_special_tokens = additional_special_tokens
+
+        if (
+            self.additional_special_tokens
+            and not self.supports_additional_special_tokens()
+        ):
+            raise RuntimeError(
+                f'{self.tokenizer} does not currently support adding additional special tokens'
+            )
+
+        for tok in self.additional_special_tokens:
+            self.add_token(tok)
+
+        for i, tok in enumerate(self.additional_special_tokens):
+            self.freq[tok] = 1000000000 + 4 + i
+
+        if self.tokenizer == 'bytelevelbpe':
+            self.bpe.add_special_tokens(self, self.additional_special_tokens)
+
+    def supports_additional_special_tokens(self):
+        """
+        Indicates whether the dictionary supports additional special tokens.
+        """
+        # TODO: add to others
+        return self.tokenizer in ['bytelevelbpe', 'split', 'space']
+
+    def is_prebuilt(self):
+        """
+        Indicates whether the dictionary is fixed, and does not require building.
+        """
+        return self.tokenizer == 'gpt2'
+
     def add_token(self, word):
         """
         Add a single token to the dictionary.
@@ -558,7 +598,7 @@ class DictionaryAgent(Agent):
 
         Initialize counts from other dictionary, or 0 if they aren't included.
         """
-        print('Dictionary: loading dictionary from {}'.format(filename))
+        logging.info(f'loading dictionary from {filename}')
 
         lower_special = self.null_token == self.null_token.lower()
         SPECIAL_TOKENS = {'__UNK__', '__NULL__', '__END__', '__START__'}
@@ -571,7 +611,7 @@ class DictionaryAgent(Agent):
                 cnt = int(split[1]) if len(split) > 1 else 0
                 self.freq[token] = cnt
                 self.add_token(token)
-        print('[ num words =  %d ]' % len(self))
+        logging.info(f'num words = {len(self)}')
 
     def save(self, filename=None, append=False, sort=True):
         """
@@ -601,7 +641,7 @@ class DictionaryAgent(Agent):
         elif sort:
             self.sort(trim=True)
 
-        print('Dictionary: saving dictionary to {}'.format(filename))
+        logging.info(f'Saving dictionary to {filename}')
 
         make_dir(os.path.dirname(filename))
         mode = 'a' if append else 'w'
@@ -701,9 +741,13 @@ class DictionaryAgent(Agent):
             text = self.bpe.decode(tokens, vector, delimiter)
         elif self.tokenizer == 'bytelevelbpe':
             # We add special tokens in the beginning of ParlAI dict but in the
-            # end of Hugging Face dict,there is an offset of 4 between them.
+            # end of Hugging Face dict, there is an offset of #(extra tokens) between them.
+            extra_tokens = 4  # length of special tokens
             vector = [
-                idx + len(self.tok2ind) - 4 if idx < 4 else idx - 4 for idx in vector
+                self.bpe.special_tok_map[idx]
+                if idx in self.bpe.special_tok_map
+                else idx - extra_tokens
+                for idx in vector
             ]
             tokens = [self[int(idx)] for idx in vector]
             text = self.bpe.decode(tokens, vector, delimiter)

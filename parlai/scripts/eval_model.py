@@ -13,21 +13,33 @@ Examples
 
 .. code-block:: shell
 
-  python eval_model.py -t "babi:Task1k:2" -m "repeat_label"
-  python eval_model.py -t "#CornellMovie" -m "ir_baseline" -mp "-lp 0.5"
+  parlai eval_model -t "babi:Task1k:2" -m "repeat_label"
+  parlai eval_model -t "#CornellMovie" -m "ir_baseline" -mp "-lp 0.5"
 """
 
 from parlai.core.params import ParlaiParser, print_announcements
 from parlai.core.agents import create_agent
 from parlai.core.logs import TensorboardLogger
-from parlai.core.metrics import aggregate_named_reports, Metric
+from parlai.core.metrics import (
+    aggregate_named_reports,
+    aggregate_unnamed_reports,
+    Metric,
+)
 from parlai.core.worlds import create_task
 from parlai.utils.misc import TimeLogger, nice_report
 from parlai.utils.world_logging import WorldLogger
-from parlai.scripts.script import ParlaiScript
+from parlai.core.script import ParlaiScript, register_script
+import parlai.utils.logging as logging
 
 import json
 import random
+
+from parlai.utils.distributed import (
+    is_primary_worker,
+    all_gather_list,
+    is_distributed,
+    get_rank,
+)
 
 
 def setup_args(parser=None):
@@ -58,7 +70,6 @@ def setup_args(parser=None):
     )
     parser.add_argument('-ne', '--num-examples', type=int, default=-1)
     parser.add_argument('-d', '--display-examples', type='bool', default=False)
-<<<<<<< HEAD
     parser.add_argument('-ltim', '--log-every-n-secs', type=float, default=2)
     parser.add_argument('--metrics', type=str, default="all",
                         help="list of metrics to show/compute, e.g. "
@@ -66,7 +77,6 @@ def setup_args(parser=None):
                              "If 'all' is specified [default] all are shown.")
     parser.add_argument('-pb', '--perturb', type=str, default="None")
     parser.add_argument('-sft', '--skip_first_turn', type='bool', default=False) 
-=======
     parser.add_argument('-ltim', '--log-every-n-secs', type=float, default=10)
     parser.add_argument(
         '-mcs',
@@ -87,13 +97,14 @@ def setup_args(parser=None):
         recommended=False,
     )
     WorldLogger.add_cmdline_args(parser)
->>>>>>> b49eba4519856f6ab83b869b168c6af99863df47
     TensorboardLogger.add_cmdline_args(parser)
     parser.set_params(datatype='valid')
     return parser
 
 
 def _save_eval_stats(opt, report):
+    if not is_primary_worker:
+        return
     report_fname = opt['report_filename']
     if report_fname == '':
         return
@@ -108,16 +119,13 @@ def _save_eval_stats(opt, report):
 
     # Save report
     with open(report_fname, 'w') as f:
-        print(f'[ Saving model report to {report_fname} ... ]')
+        logging.info(f'Saving model report to {report_fname}')
         json.dump({'opt': opt, 'report': json_serializable_report}, f, indent=4)
+        f.write("\n")  # for jq
 
 
 def _eval_single_world(opt, agent, task):
-    print(
-        '[ Evaluating task {} using datatype {}. ] '.format(
-            task, opt.get('datatype', 'N/A')
-        )
-    )
+    logging.info(f'Evaluating task {task} using datatype {opt.get("datatype")}.')
     # set up world logger
     world_logger = WorldLogger(opt) if opt['save_world_logs'] else None
 
@@ -134,52 +142,49 @@ def _eval_single_world(opt, agent, task):
     # max number of examples to evaluate
     max_cnt = opt['num_examples'] if opt['num_examples'] > 0 else float('inf')
     cnt = 0
+    total_cnt = world.num_examples()
+
+    if is_distributed():
+        logging.warn('Progress bar is approximate in distributed mode.')
 
     while not world.epoch_done() and cnt < max_cnt:
         cnt += opt.get('batchsize', 1)
-<<<<<<< HEAD
-        try:
-            world.parley()
-        except:
-            continue
-=======
-        world.parley()
         if world_logger is not None:
             world_logger.log(world)
->>>>>>> b49eba4519856f6ab83b869b168c6af99863df47
         if opt['display_examples']:
             # display examples
             print(world.display() + '\n~~')
         if log_time.time() > log_every_n_secs:
             report = world.report()
             text, report = log_time.log(
-                report.get('exs', 0), min(max_cnt, world.num_examples()), report
+                report.get('exs', 0), min(max_cnt, total_cnt), report
             )
-            print(text)
+            logging.info(text)
 
     report = world.report()
-<<<<<<< HEAD
     print("FINAL_REPORT: {}".format(report))
-=======
+    report = aggregate_unnamed_reports(all_gather_list(world.report()))
     world.reset()
 
     if world_logger is not None:
         # dump world acts to file
         world_logger.reset()  # add final acts to logs
         base_outfile = opt['report_filename'].split('.')[0]
-        outfile = base_outfile + f'_{task}_replies.jsonl'
+        if is_distributed():
+            rank = get_rank()
+            outfile = base_outfile + f'_{task}_{rank}_replies.jsonl'
+        else:
+            outfile = base_outfile + f'_{task}_replies.jsonl'
         world_logger.write(outfile, world, file_format=opt['save_format'])
 
     return report
 
 
-def eval_model(opt, print_parser=None):
+def eval_model(opt):
     """
     Evaluates a model.
 
     :param opt: tells the evaluation function how to run
-    :param bool print_parser: if provided, prints the options that are set within the
-        model after loading the model
     :return: the final result of calling report()
     """
     random.seed(42)
@@ -197,10 +202,7 @@ def eval_model(opt, print_parser=None):
 
     # load model and possibly print opt
     agent = create_agent(opt, requireModelExists=True)
-    if print_parser:
-        # show args after loading model
-        print_parser.opt = agent.opt
-        print_parser.print_args()
+    agent.opt.log()
 
     tasks = opt['task'].split(',')
     reports = []
@@ -214,17 +216,16 @@ def eval_model(opt, print_parser=None):
 
     # print announcments and report
     print_announcements(opt)
-    print(
-        '[ Finished evaluating tasks {} using datatype {} ]'.format(
-            tasks, opt.get('datatype', 'N/A')
-        )
+    logging.info(
+        f'Finished evaluating tasks {tasks} using datatype {opt.get("datatype")}'
     )
+
     print(nice_report(report))
     _save_eval_stats(opt, report)
->>>>>>> b49eba4519856f6ab83b869b168c6af99863df47
     return report
 
 
+@register_script('eval_model', aliases=['em', 'eval'])
 class EvalModel(ParlaiScript):
     @classmethod
     def setup_args(cls):

@@ -21,7 +21,6 @@ for the paper, we have kept this file mostly the same.
 from parlai.core.torch_agent import TorchAgent, Output, Batch
 from parlai.utils.misc import round_sigfigs
 from parlai.utils.torch import padded_tensor, argsort, neginf
-from parlai.utils.thread import SharedTable
 from .modules import Seq2seq, opt_to_kwargs
 from .util import ConvAI2History, show_beam_cands, reorder_extrep2gram_qn
 from .controls import (
@@ -258,17 +257,6 @@ class ControllableSeq2seqAgent(TorchAgent):
         TorchAgent.add_cmdline_args(argparser)
         ControllableSeq2seqAgent.dictionary_class().add_cmdline_args(argparser)
         return agent
-
-    @staticmethod
-    def model_version():
-        """
-        Return current version of this model, counting up from 0.
-
-        Models may not be backwards-compatible with older versions. Version 1 split from
-        version 0 on Aug 29, 2018. To use version 0, use --model legacy:seq2seq:0
-        (legacy agent code is located in parlai/agents/legacy_agents).
-        """
-        return 1
 
     def __init__(self, opt, shared=None):
         """
@@ -628,16 +616,7 @@ class ControllableSeq2seqAgent(TorchAgent):
         """
         shared = super().share()
         shared['model'] = self.model
-        if self.opt.get('numthreads', 1) > 1:
-            # we're doing hogwild so share the model too
-            if isinstance(self.metrics, dict):
-                # move metrics and model to shared memory
-                self.metrics = SharedTable(self.metrics)
-                self.model.share_memory()
-            shared['states'] = {  # don't share optimizer states
-                'optimizer_type': self.opt['optimizer']
-            }
-        shared['metrics'] = self.metrics  # do after numthreads check
+        shared['metrics'] = self.metrics
         if self.beam_dot_log is True:
             shared['beam_dot_dir'] = self.beam_dot_dir
         return shared
@@ -1195,7 +1174,6 @@ class ControllableSeq2seqAgent(TorchAgent):
             # save opt file
             with open(path + '.opt', 'w') as handle:
                 # save version string
-                self.opt['model_version'] = self.model_version()
                 json.dump(self.opt, handle)
 
     def load(self, path):

@@ -134,7 +134,7 @@ class TestDictionary(unittest.TestCase):
         """
         argparser = ParlaiParser()
         DictionaryAgent.add_cmdline_args(argparser)
-        opt = argparser.parse_args([], print_args=False)
+        opt = argparser.parse_args([])
         dictionary = DictionaryAgent(opt)
         num_builtin = len(dictionary)
 
@@ -162,7 +162,7 @@ class TestDictionary(unittest.TestCase):
         Check that moving a model without moving the dictfile raises an error.
         """
         # Download model, move to a new location
-        datapath = ParlaiParser().parse_args([], print_args=False)['datapath']
+        datapath = ParlaiParser().parse_args([])['datapath']
         try:
             # remove unittest models if there before
             shutil.rmtree(os.path.join(datapath, 'models/unittest'))
@@ -189,7 +189,7 @@ class TestDictionary(unittest.TestCase):
 
         parser = tms.setup_args()
         parser.set_params(task='babi:task1k:1', model='seq2seq')
-        popt = parser.parse_args([], print_args=False)
+        popt = parser.parse_args([])
         with self.assertRaises(RuntimeError):
             tms.TrainLoop(popt)
 
@@ -209,7 +209,7 @@ class TestByteLevelBPE(unittest.TestCase):
             bpe_vocab=DEFAULT_BYTELEVEL_BPE_VOCAB,
             bpe_merge=DEFAULT_BYTELEVEL_BPE_MERGE,
         )
-        opt = parser.parse_args([], print_args=False)
+        opt = parser.parse_args([])
         agent = DictionaryAgent(opt)
         self.assertEqual(
             # grinning face emoji
@@ -237,7 +237,7 @@ class TestByteLevelBPE(unittest.TestCase):
             bpe_merge=DEFAULT_BYTELEVEL_BPE_MERGE,
             bpe_add_prefix_space=False,
         )
-        opt = parser.parse_args([], print_args=False)
+        opt = parser.parse_args([])
         agent = DictionaryAgent(opt)
         self.assertEqual(
             # grinning face emoji
@@ -379,6 +379,31 @@ class TestByteLevelBPE(unittest.TestCase):
             )
             assert da2.txt2vec("hello") == da.txt2vec("hello")
 
+    def test_add_special_tokens(self):
+        """
+        Add a list of special tokens to the dictionary.
+        """
+        special_toks_lst = ['MY', 'NAME', 'IS', 'EMILY']
+        # create Dictionary Agent
+        parser = ParlaiParser()
+        parser.set_params(
+            dict_tokenizer='bytelevelbpe',
+            bpe_vocab=DEFAULT_BYTELEVEL_BPE_VOCAB,
+            bpe_merge=DEFAULT_BYTELEVEL_BPE_MERGE,
+            hf_skip_special_tokens=False,
+        )
+        opt = parser.parse_args([])
+
+        agent = DictionaryAgent(opt)
+        agent.add_additional_special_tokens(special_toks_lst)
+
+        self.assertEqual(agent.additional_special_tokens, special_toks_lst)
+        phrases = ['Hi what is up EMILY', 'What IS your NAME', 'That is MY dog']
+        for phrase in phrases:
+            vec = agent.txt2vec(phrase)
+            text = agent.vec2txt(vec)
+            self.assertEqual(phrase, text)
+
 
 class TestBuildDict(unittest.TestCase):
     def _run_test(self, opt):
@@ -387,7 +412,7 @@ class TestBuildDict(unittest.TestCase):
             pp = build_dict.setup_args()
             pp.set_defaults(**opt)
             pp.set_defaults(task='babi')
-            popt = pp.parse_args([], print_args=False)
+            popt = pp.parse_args([])
             popt['dict_file'] = dict_file
             for k, v in opt.items():
                 popt[k] = v
@@ -419,7 +444,7 @@ class TestGpt2HFInterop(unittest.TestCase):
             bpe_add_prefix_space=False,
             dict_loaded=True,
         )
-        opt = parser.parse_args([], print_args=False)
+        opt = parser.parse_args([])
         return opt
 
     def _run_test(self, slow_bytelevel_bpe, hf_bpe):
@@ -468,7 +493,7 @@ class TestGpt2HFInterop(unittest.TestCase):
             pp = build_dict.setup_args()
             pp.set_defaults(**hf_bpe_opt)
             pp.set_defaults(task='babi')
-            popt = pp.parse_args([], print_args=False)
+            popt = pp.parse_args([])
             popt['dict_file'] = dict_file
             build_dict.build_dict(popt)
 

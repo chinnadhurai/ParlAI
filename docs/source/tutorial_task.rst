@@ -61,6 +61,23 @@ ParlAI message is tab separated with the name of the field, followed by a colon.
 E.g. the usual fields like 'text', 'labels', 'label_candidates' etc. can all
 be used, or you can add your own fields too if you have a special use for them.
 
+Handling Separate Train/Valid/Test data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Once you've gotten the basics of a data working above, you might want to
+separate out the data into specific train/valid/test sets, as the above
+example uses *the same data for all folds*. This is also easy to do. Simply
+separate the data into three separate files: ``mydata_train.txt``,
+``mydata_valid.txt`` and ``mydata_test.txt``. Afterwards, modify your parlai
+call as follows:
+
+
+::
+
+	python parlai/scripts/display_data.py -t fromfile:parlaiformat --fromfile-datapath /tmp/mydata --fromfile-datatype-extension true
+
+This will cause the system to add the ``_train.txt``, ``_valid.txt``, and ``_test.txt`` suffixes at the appropriate times during training, evaluation, etc.
+
 
 Creating a New Task: *the more complete way*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -218,14 +235,15 @@ we only have to initialize the class and set a few option parameters, as shown b
 
     class DefaultTeacher(ParlAIDialogTeacher):
         def __init__(self, opt, shared=None):
-            super().__init__(opt, shared)
             opt = copy.deepcopy(opt)
 
             # get datafile
-            opt['datafile'] = _path(opt, '')
+            opt['parlaidialogteacher_datafile'] = _path(opt, '')
+
+            super().__init__(opt, shared)
 
 We can notice there was a call to a ``_path()`` method, which returns the path to the correct datafile.
-The path to the file is then stored in the options dictionary under the ``datafile`` key.
+The path to the file is then stored in the options dictionary under the ``parlaidialogteacher_datafile`` key.
 This item is passed to ``setup_data()`` so that subclasses can just override the path instead of the function.
 We still need to implement this ``_path()`` method. The version for this example is presented below.
 It first ensures the data is built by calling the ``build()`` method described in Part 1.
@@ -249,7 +267,7 @@ To access this data, we can now use the ``display_data.py`` file in the ``exampl
 
 .. code-block:: bash
 
-    python examples/display_data.py -t twitter
+    parlai display_data -t twitter
 
 
 DialogTeacher

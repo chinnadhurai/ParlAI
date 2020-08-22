@@ -16,9 +16,9 @@ from parlai.core.teachers import (
     DialogTeacher,
     AbstractImageTeacher,
     Teacher,
+    ChunkTeacher,
 )
 from parlai.core.opt import Opt
-from torch.utils.data import Dataset
 import copy
 import random
 import itertools
@@ -27,6 +27,7 @@ from PIL import Image
 import string
 import json
 from abc import ABC
+from typing import Tuple, List
 
 # default parameters
 VOCAB_SIZE = 7
@@ -34,6 +35,7 @@ EXAMPLE_SIZE = 4
 NUM_CANDIDATES = 10
 NUM_TRAIN = 500
 NUM_TEST = 100
+INFINITE = 1e20
 
 
 class CandidateBaseTeacher(Teacher, ABC):
@@ -198,110 +200,6 @@ class VariableLengthTeacher(CandidateTeacher):
         return corpus
 
 
-class CandidateTeacherDataset(Dataset):
-    """
-    Candidate Teacher, in Pytorch Dataset form.
-
-    Identical setup. Only difference is a `self.data` object, which contains all the
-    episodes in the task.
-    """
-
-    def __init__(
-        self,
-        opt,
-        shared=None,
-        vocab_size=VOCAB_SIZE,
-        example_size=EXAMPLE_SIZE,
-        num_candidates=NUM_CANDIDATES,
-        num_train=NUM_TRAIN,
-        num_test=NUM_TEST,
-    ):
-        self.opt = opt
-        opt['datafile'] = opt['datatype'].split(':')[0]
-        self.datafile = opt['datafile']
-
-        self.vocab_size = vocab_size
-        self.example_size = example_size
-        self.num_candidates = num_candidates
-        self.num_train = num_train
-        self.num_test = num_test
-
-        # set up the vocabulary
-        self.words = list(map(str, range(self.vocab_size)))
-        self.data = self.setup_data(opt['datatype'].split(':')[0])
-
-    def __getitem__(self, index):
-        return (index, self.data[index])
-
-    def __len__(self) -> int:
-        return self.num_examples()
-
-    def num_episodes(self) -> int:
-        return len(self.data)
-
-    def num_examples(self) -> int:
-        return self.num_episodes()
-
-    def setup_data(self, fold):
-        data = []
-        # N words appearing in a random order
-        self.rng = random.Random(42)
-        full_corpus = [
-            list(x) for x in itertools.permutations(self.words, self.example_size)
-        ]
-        self.rng.shuffle(full_corpus)
-
-        it = iter(full_corpus)
-        self.train = list(itertools.islice(it, self.num_train))
-        self.val = list(itertools.islice(it, self.num_test))
-        self.test = list(itertools.islice(it, self.num_test))
-
-        # check we have enough data
-        assert len(self.train) == self.num_train, len(self.train)
-        assert len(self.val) == self.num_test, len(self.val)
-        assert len(self.test) == self.num_test, len(self.test)
-
-        # check every word appear in the training set
-        assert len(set(itertools.chain(*self.train)) - set(self.words)) == 0
-
-        # select which set we're using
-        if fold == "train":
-            self.corpus = self.train
-        elif fold == "valid":
-            self.corpus = self.val
-        elif fold == "test":
-            self.corpus = self.test
-
-        # make sure the corpus is actually text strings
-        self.corpus = [' '.join(x) for x in self.corpus]
-
-        for i, text in enumerate(self.corpus):
-            cands = []
-            for j in range(NUM_CANDIDATES):
-                offset = (i + j) % len(self.corpus)
-                cands.append(self.corpus[offset])
-            ex = {
-                'text': text,
-                'labels': tuple([text]),
-                'label_candidates': tuple(cands),
-                'episode_done': True,
-            }
-            data.append(ex)
-        return data
-
-
-class NoCandidateTeacherDataset(CandidateTeacherDataset):
-    def setup_data(self, fold):
-        data = super().setup_data(fold)
-        for d in data:
-            del d['label_candidates']
-        return data
-
-
-class DefaultDataset(CandidateTeacherDataset):
-    pass
-
-
 class MultiturnCandidateTeacher(CandidateTeacher):
     """
     Splits inputs/targets by spaces into multiple turns.
@@ -442,25 +340,27 @@ class BadExampleTeacher(CandidateTeacher):
             case = newget.case
             if case == 0:
                 # empty string input
-                item['text'] = ''
+                item.force_set('text', '')
             elif case == 1:
                 # not text input
                 del item['text']
             elif case == 2:
                 # empty string label
-                item['labels'] = ['']
+                item.force_set('labels', [''])
             elif case == 3:
                 # no label
                 del item['labels']
             elif case == 4:
                 # no label candidates
-                item['label_candidates'] = []
+                item.force_set('label_candidates', [])
             elif case == 5:
                 # extra empty string in labels
-                item['label_candidates'] = list(item['label_candidates']) + ['']
+                item.force_set(
+                    'label_candidates', list(item['label_candidates']) + ['']
+                )
             elif case == 6:
                 # label candidates doesn't have the label
-                item['label_candidates'] = list(item['label_candidates'])
+                item.force_set('label_candidates', list(item['label_candidates']))
                 item['label_candidates'].remove(item['labels'][0])
             elif case == 7:
                 # no label candidates field
@@ -487,25 +387,22 @@ class ImageTeacher(AbstractImageTeacher):
         imagepath = os.path.join(datapath, 'images')
         os.makedirs(imagepath, exist_ok=True)
 
-        self.image_features_path = os.path.join(datapath, 'image_features')
+        self.image_features_path = os.path.join(
+            datapath, f'{opt["image_mode"]}_image_features'
+        )
 
         # Create fake images and features
         imgs = [f'img_{i}' for i in range(10)]
         for i, img in enumerate(imgs):
-            image = Image.new('RGB', (100, 100), color=i)
+            image = Image.new('RGB', (16, 16), color=i)
             image.save(os.path.join(imagepath, f'{img}.jpg'), 'JPEG')
 
         # write out fake data
         for dt in ['train', 'valid', 'test']:
             random.seed(42)
             data = [
-                {
-                    'image_id': img,
-                    'text': ''.join(
-                        random.choice(string.ascii_uppercase) for _ in range(10)
-                    ),
-                }
-                for img in imgs
+                {'image_id': img, 'text': string.ascii_uppercase[i]}
+                for i, img in enumerate(imgs)
             ]
             with open(os.path.join(datapath, f'{dt}.json'), 'w') as f:
                 json.dump(data, f)
@@ -545,6 +442,65 @@ class RepeatTeacher(DialogTeacher):
 
     def num_episodes(self):
         return self.data_length
+
+
+class ChunkyTeacher(ChunkTeacher):
+    def _get_data_folder(self):
+        return None
+
+    def get_num_samples(self, opt) -> Tuple[int, int]:
+        datatype = opt['datatype']
+        if 'train' in datatype:
+            return NUM_TRAIN, NUM_TRAIN
+        elif 'valid' in datatype:
+            return NUM_TEST, NUM_TEST
+        elif 'test' in datatype:
+            return NUM_TEST, NUM_TEST
+
+    def get_fold_chunks(self, opt) -> List[int]:
+        datatype = opt['datatype']
+        if 'train' in datatype:
+            return list(range(50))
+        elif 'valid' in datatype:
+            return list(range(50, 60))
+        elif 'test' in datatype:
+            return list(range(60, 70))
+
+    def load_from_chunk(self, chunk_idx: int):
+        output = []
+        for i in range(10):
+            text = " ".join([str(i)] + [str(chunk_idx)] * 5)
+            resp = " ".join([str(i)])
+            output.append((text, resp))
+        return output
+
+    def create_message(self, sample_item, entry_idx=0):
+        text, label = sample_item
+        return {'text': text, 'labels': [label], 'episode_done': True}
+
+
+class InfiniteTrainTeacher(ChunkyTeacher):
+    """
+    Chunk teacher with an effectively infinite number of training examples.
+    """
+
+    def get_num_samples(self, opt) -> Tuple[int, int]:
+        datatype = opt['datatype']
+        if 'train' in datatype:
+            return INFINITE, INFINITE
+        elif 'valid' in datatype:
+            return NUM_TEST, NUM_TEST
+        elif 'test' in datatype:
+            return NUM_TEST, NUM_TEST
+
+
+class ShortFixedTeacher(FixedDialogCandidateTeacher):
+    """
+    Fixed Dialog Candidate teacher with only 10 training examples.
+    """
+
+    def __init__(self, opt: Opt, shared: dict = None):
+        super().__init__(opt, shared, num_train=10, num_test=10)
 
 
 class DefaultTeacher(CandidateTeacher):

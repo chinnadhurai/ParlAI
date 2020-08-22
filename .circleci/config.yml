@@ -6,17 +6,30 @@ version: 2
 standard_cpu38: &standard_cpu38
   docker:
     - image: circleci/python:3.8.0-buster-node
-  resource_class: large
+  environment:
+    PYTHONUNBUFFERED: 1
+  resource_class: xlarge
 
 standard_cpu37: &standard_cpu37
   docker:
     - image: circleci/python:3.7.5-buster-node
+  environment:
+    PYTHONUNBUFFERED: 1
+  resource_class: xlarge
+
+small_cpu37: &small_cpu37
+  docker:
+    - image: circleci/python:3.7.5-buster-node
+  environment:
+    PYTHONUNBUFFERED: 1
   resource_class: large
 
 standard_cpu36: &standard_cpu36
   docker:
     - image: circleci/python:3.6.9-buster-node
-  resource_class: large
+  environment:
+    PYTHONUNBUFFERED: 1
+  resource_class: xlarge
 
 osx_cpu37: &osx_cpu37
   macos:
@@ -24,11 +37,13 @@ osx_cpu37: &osx_cpu37
     xcode: "11.3.1"
   environment:
     PYTHON: 3.7.1
+    PYTHONUNBUFFERED: 1
     HOMEBREW_NO_AUTO_UPDATE: 1
 
 gpu: &gpu
   environment:
     CUDA_VERSION: "10.2"
+    PYTHONUNBUFFERED: 1
   machine:
     image: ubuntu-1604:201903-01
   resource_class: gpu.medium # tesla m60
@@ -66,9 +81,9 @@ installdeps: &installdeps
   run:
     name: Installs basic dependencies
     command: |
-      pip3 install --progress-bar off --upgrade pip setuptools
-      pip3 install --progress-bar off coverage
-      pip3 install --progress-bar off codecov
+      python -m pip install --progress-bar off --upgrade pip setuptools
+      python -m pip install --progress-bar off coverage
+      python -m pip install --progress-bar off codecov
       mkdir -p ~/ParlAI/test-results
       pip install -v -r requirements.txt
       python setup.py develop
@@ -78,12 +93,13 @@ installtorchgpu14: &installtorchgpu14
   run:
     name: Install torch GPU and dependencies
     command: |
-      pip3 install --progress-bar off 'torch==1.4.0'
-      pip3 install --progress-bar off 'subword-nmt==0.3.7'
-      pip3 install --progress-bar off pytorch-pretrained-bert
-      pip3 install --progress-bar off 'torchtext==0.5.0'
-      pip3 install --progress-bar off 'torchvision==0.5.0'
-      pip3 install --progress-bar off transformers
+      python -m pip install --progress-bar off 'torch==1.4.0'
+      python -m pip install --progress-bar off 'subword-nmt==0.3.7'
+      python -m pip install --progress-bar off pytorch-pretrained-bert
+      python -m pip install --progress-bar off 'torchtext==0.5.0'
+      python -m pip install --progress-bar off 'torchvision==0.5.0'
+      python -m pip install --progress-bar off transformers
+      python -m pip install --progress-bar off fairseq
       python -c 'import torch; print("Torch version:", torch.__version__)'
       python -m torch.utils.collect_env
 
@@ -92,10 +108,11 @@ installtorchgpu13: &installtorchgpu13
   run:
     name: Install torch GPU and dependencies
     command: |
-      pip3 install --progress-bar off 'torch==1.3.1'
-      pip3 install --progress-bar off 'subword-nmt==0.3.7'
-      pip3 install --progress-bar off pytorch-pretrained-bert
-      pip3 install --progress-bar off transformers
+      python -m pip install --progress-bar off 'torch==1.3.1'
+      python -m pip install --progress-bar off 'subword-nmt==0.3.7'
+      python -m pip install --progress-bar off pytorch-pretrained-bert
+      python -m pip install --progress-bar off transformers
+      python -m pip install --progress-bar off fairseq
       python -c 'import torch; print("Torch version:", torch.__version__)'
       python -m torch.utils.collect_env
 
@@ -104,7 +121,7 @@ installtorchcpuosx: &installtorchcpuosx
   run:
     name: Install torch CPU and dependencies
     command: |
-      pip3 install --progress-bar off torch
+      python -m pip install --progress-bar off torch==1.4.0
       python -c 'import torch; print("Torch version:", torch.__version__)'
       python -m torch.utils.collect_env
 
@@ -112,7 +129,7 @@ installtorchcpu: &installtorchcpu
   run:
     name: Install torch CPU and dependencies
     command: |
-      pip3 install --progress-bar off torch==1.4.0+cpu torchtext==0.5.0 torchvision==0.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+      python -m pip install --progress-bar off torch==1.4.0+cpu torchtext==0.5.0 torchvision==0.5.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
       python -c 'import torch; print("Torch version:", torch.__version__)'
       python -m torch.utils.collect_env
 
@@ -147,26 +164,43 @@ jobs:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: deps-v5-osx-{{ checksum "requirements.txt" }}
+          key: deps-20200625-osx-{{ checksum "requirements.txt" }}
       - <<: *setup
       - <<: *installdeps
       - <<: *installtorchcpuosx
       - save_cache:
-          key: deps-v5-osx-{{ checksum "requirements.txt" }}
+          key: deps-20200625-osx-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Unit tests (OSX)
+          no_output_timeout: 60m
           command: coverage run -m pytest --junitxml=test-results/junit.xml -m unit -v
       - <<: *codecov
       - store_test_results:
           path: test-results
 
+  cleaninstall_36:
+    <<: *standard_cpu36
+    working_directory: ~/ParlAI
+    parallelism: 1
+    steps:
+      - checkout
+      - <<: *fixgit
+      - <<: *setup
+      - run:
+          name: Test installation instructions
+          no_output_timeout: 60m
+          command: |
+            python -m pip install --progress-bar off --upgrade pip setuptools
+            python setup.py develop
+            parlai display_data -t integration_tests
+
   unittests_36:
     <<: *standard_cpu36
     working_directory: ~/ParlAI
-    parallelism: 8
+    parallelism: 16
     steps:
       - checkout
       - run:
@@ -174,17 +208,18 @@ jobs:
           command: circleci tests split --split-by=timings --timings-type=classname
       - <<: *fixgit
       - restore_cache:
-          key: deps-v5-ut36-{{ checksum "requirements.txt" }}
+          key: deps-20200625-ut36-{{ checksum "requirements.txt" }}
       - <<: *setup
-      - <<: *installdeps
       - <<: *installtorchcpu
+      - <<: *installdeps
       - save_cache:
-          key: deps-v5-ut36-{{ checksum "requirements.txt" }}
+          key: deps-20200625-ut36-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Unit tests (py36)
+          no_output_timeout: 60m
           command: coverage run -m pytest --junitxml=test-results/junit.xml -m unit -v
       - <<: *codecov
       - store_test_results:
@@ -193,22 +228,23 @@ jobs:
   unittests_38:
     <<: *standard_cpu38
     working_directory: ~/ParlAI
-    parallelism: 8
+    parallelism: 16
     steps:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: deps-v5-ut38-{{ checksum "requirements.txt" }}
+          key: deps-20200625-ut38-{{ checksum "requirements.txt" }}
       - <<: *setup
-      - <<: *installdeps
       - <<: *installtorchcpu
+      - <<: *installdeps
       - save_cache:
-          key: deps-v5-ut38-{{ checksum "requirements.txt" }}
+          key: deps-20200625-ut38-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Unit tests (py38)
+          no_output_timeout: 60m
           command: coverage run -m pytest --junitxml=test-results/junit.xml -m unit -v
       - <<: *codecov
       - store_test_results:
@@ -217,22 +253,23 @@ jobs:
   unittests_37:
     <<: *standard_cpu37
     working_directory: ~/ParlAI
-    parallelism: 8
+    parallelism: 16
     steps:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: deps-v5-ut37-{{ checksum "requirements.txt" }}
+          key: deps-20200625-ut37-{{ checksum "requirements.txt" }}
       - <<: *setup
-      - <<: *installdeps
       - <<: *installtorchcpu
+      - <<: *installdeps
       - save_cache:
-          key: deps-v5-ut37-{{ checksum "requirements.txt" }}
+          key: deps-20200625-ut37-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Unit tests (py37)
+          no_output_timeout: 60m
           command: coverage run -m pytest --junitxml=test-results/junit.xml -m unit -v
       - <<: *codecov
       - store_test_results:
@@ -241,29 +278,30 @@ jobs:
   unittests_gpu13:
     <<: *gpu
     working_directory: ~/ParlAI
-    parallelism: 8
+    parallelism: 16
     steps:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: nvidia-downloads-v4
+          key: nvidia-downloads-20200516
       - <<: *setupcuda
       - save_cache:
-          key: nvidia-downloads-v4
+          key: nvidia-downloads-20200516
           paths:
             - "~/nvidia-downloads/"
       - restore_cache:
-          key: deps-v5-gpu13-{{ checksum "requirements.txt" }}
+          key: deps-20200625-gpu13-{{ checksum "requirements.txt" }}
       - <<: *setup
-      - <<: *installdeps
       - <<: *installtorchgpu13
+      - <<: *installdeps
       - save_cache:
-          key: deps-v5-gpu13-{{ checksum "requirements.txt" }}
+          key: deps-20200625-gpu13-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Unit tests (GPU; pytorch 1.3)
+          no_output_timeout: 60m
           command: coverage run -m pytest --junitxml=test-results/junit.xml -m unit -v
       - <<: *codecov
       - store_test_results:
@@ -272,35 +310,36 @@ jobs:
   unittests_gpu14:
     <<: *gpu
     working_directory: ~/ParlAI
-    parallelism: 8
+    parallelism: 16
     steps:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: nvidia-downloads-v4
+          key: nvidia-downloads-20200516
       - <<: *setupcuda
       - save_cache:
-          key: nvidia-downloads-v4
+          key: nvidia-downloads-20200516
           paths:
             - "~/nvidia-downloads/"
       - restore_cache:
-          key: deps-v5-gpu14-{{ checksum "requirements.txt" }}
+          key: deps-20200625-gpu14-{{ checksum "requirements.txt" }}
       - <<: *setup
-      - <<: *installdeps
       - <<: *installtorchgpu14
+      - <<: *installdeps
       - save_cache:
-          key: deps-v5-gpu14-{{ checksum "requirements.txt" }}
+          key: deps-20200625-gpu14-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Unit tests (GPU; pytorch 1.4)
+          no_output_timeout: 60m
           command: coverage run -m pytest --junitxml=test-results/junit.xml -m unit -v
       - <<: *codecov
       - store_test_results:
           path: test-results
 
-  nightly_gpu_tests:
+  long_gpu_tests:
     <<: *gpu
     working_directory: ~/ParlAI
     parallelism: 8
@@ -308,29 +347,53 @@ jobs:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: nvidia-downloads-v4
+          key: nvidia-downloads-20200516
       - <<: *setupcuda
       - save_cache:
-          key: nvidia-downloads-v4
+          key: nvidia-downloads-20200516
           paths:
             - "~/nvidia-downloads/"
       - restore_cache:
-          key: deps-v5-nightly-{{ checksum "requirements.txt" }}
+          key: deps-20200625-nightly-{{ checksum "requirements.txt" }}
       - <<: *setup
-      - <<: *installdeps
       - <<: *installtorchgpu14
+      - <<: *installdeps
       - save_cache:
-          key: deps-v5-nightly-{{ checksum "requirements.txt" }}
+          key: deps-20200625-nightly-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
       - run:
           name: Nightly GPU tests
           no_output_timeout: 60m
-          command: coverage run -m pytest --junitxml=test-results/junit.xml -m nightly_gpu -v
+          command: coverage run -m pytest --junitxml=test-results/junit.xml -m nightly_gpu -v -s
       - run:
           name: Quickstart unit tests (GPU; pytorch 1.4)
           command: sh tests/test_quickstart.sh
+      - <<: *codecov
+      - store_test_results:
+          path: test-results
+
+  teacher_tests:
+    <<: *small_cpu37
+    working_directory: ~/ParlAI
+    parallelism: 8
+    steps:
+      - checkout
+      - <<: *fixgit
+      - restore_cache:
+          key: deps-20200625-teacher-{{ checksum "requirements.txt" }}
+      - <<: *setup
+      - <<: *installdeps
+      - save_cache:
+          key: deps-20200625-teacher-{{ checksum "requirements.txt" }}
+          paths:
+            - "~/venv/bin"
+            - "~/venv/lib"
+      - run:
+          name: All data tests
+          no_output_timeout: 60m
+          command: coverage run -m pytest --junitxml=test-results/junit.xml -m tasks parlai/tasks/*/test.py -v
       - <<: *codecov
       - store_test_results:
           path: test-results
@@ -342,11 +405,11 @@ jobs:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: deps-v4-mturk-{{ checksum "requirements.txt" }}
+          key: deps-20200625-mturk-{{ checksum "requirements.txt" }}
       - <<: *setup
       - <<: *installdeps
       - save_cache:
-          key: deps-v4-mturk-{{ checksum "requirements.txt" }}
+          key: deps-20200625-mturk-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
@@ -364,7 +427,7 @@ jobs:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: deps-v4-bw-{{ checksum "requirements.txt" }}
+          key: deps-20200625-bw-{{ checksum "requirements.txt" }}
       - <<: *setup
       - <<: *installdeps
       - <<: *installtorchgpu14
@@ -375,7 +438,7 @@ jobs:
             pip install s3cmd
             sudo apt-get install linkchecker
       - save_cache:
-          key: deps-v4-bw-{{ checksum "requirements.txt" }}
+          key: deps-20200625-bw-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
@@ -395,12 +458,12 @@ jobs:
       - checkout
       - <<: *fixgit
       - restore_cache:
-          key: deps-v4-dw-{{ checksum "requirements.txt" }}
+          key: deps-20200625-dw-{{ checksum "requirements.txt" }}
       - <<: *setup
       - <<: *installdeps
       - <<: *installtorchgpu14
       - save_cache:
-          key: deps-v4-dw-{{ checksum "requirements.txt" }}
+          key: deps-20200625-dw-{{ checksum "requirements.txt" }}
           paths:
             - "~/venv/bin"
             - "~/venv/lib"
@@ -434,31 +497,6 @@ jobs:
             echo 'Testing docs css'
             curl -f -i 'https://parl.ai/docs/_static/css/parlai_theme.css'
 
-  check_extra_tests:
-    <<: *standard_cpu37
-    working_directory: ~/ParlAI
-    steps:
-      - checkout
-      - <<: *fixgit
-      - <<: *setup
-      - run:
-          name: "Conditionally launching long tests..."
-          working_directory: ~/ParlAI/
-          command: |
-            pip install gitpython
-            python setup.py develop --no-deps
-            python .circleci/triggers.py | while read job; do
-              curl -s \
-                --data "build_parameters[CIRCLE_JOB]=${job}" \
-                --data "build_parameters[CIRCLE_WORKFLOW_ID]=${CIRCLE_WORKFLOW_ID}" \
-                --data "build_parameters[CIRCLE_WORKFLOW_WORKSPACE_ID]=${CIRCLE_WORKFLOW_WORKSPACE_ID}" \
-                --data "build_parameters[CIRCLE_WORKFLOW_UPSTREAM_JOB_IDS]=${CIRCLE_WORKFLOW_JOB_ID}" \
-                --data "revision=$CIRCLE_SHA1" \
-                https://circleci.com/api/v1.1/project/github/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/tree/$CIRCLE_BRANCH?circle-token=$CIRCLE_API_USER_TOKEN >/dev/null
-                echo "Launching ${job}..."
-            done
-
-
 # -------------------------------------------------------------------------------------
 # Workflows
 # -------------------------------------------------------------------------------------
@@ -466,24 +504,15 @@ workflows:
   version: 2
   commit:
     jobs:
-      - unittests_gpu13
+      - cleaninstall_36
       - unittests_gpu14
       - unittests_38
       - unittests_37
       - unittests_36
       - mturk_tests
-      - unittests_osx:
-          filters:
-            branches:
-              only: master
-      - nightly_gpu_tests:
-          filters:
-            branches:
-              only: master
-      - check_extra_tests:
-          filters:
-            branches:
-              ignore: master
+      - unittests_osx
+      - long_gpu_tests
+      - teacher_tests
       - build_website:
           filters:
             branches:

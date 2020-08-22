@@ -16,9 +16,9 @@ Examples
 --------
 .. code-block:: shell
 
-  python -m parlai.scripts.train_model -m ir_baseline -t dialog_babi:Task:1 -mf /tmp/model
-  python -m parlai.scripts.train_model -m seq2seq -t babi:Task10k:1 -mf '/tmp/model' -bs 32 -lr 0.5 -hs 128
-  python -m parlai.scripts.train_model -m drqa -t babi:Task10k:1 -mf /tmp/model -bs 10
+  parlai train_model -m ir_baseline -t dialog_babi:Task:1 -mf /tmp/model
+  parlai train_model -m seq2seq -t babi:Task10k:1 -mf '/tmp/model' -bs 32 -lr 0.5 -hs 128
+  parlai train_model -m drqa -t babi:Task10k:1 -mf /tmp/model -bs 10
 """  # noqa: E501
 
 # TODO List:
@@ -46,7 +46,8 @@ from parlai.utils.distributed import (
     num_workers,
 )
 from parlai.utils.misc import Timer, nice_report
-from parlai.scripts.script import ParlaiScript
+from parlai.core.script import ParlaiScript, register_script
+import parlai.utils.logging as logging
 
 
 def setup_args(parser=None) -> ParlaiParser:
@@ -160,7 +161,7 @@ def setup_args(parser=None) -> ParlaiParser:
         '-lfc',
         '--load-from-checkpoint',
         type='bool',
-        default=False,
+        default=True,
         hidden=True,
         help='load model from checkpoint if available',
     )
@@ -270,10 +271,12 @@ class TrainLoop:
         if 'dict_file' in opt:
             if opt['dict_file'] is None and opt.get('model_file'):
                 opt['dict_file'] = opt['model_file'] + '.dict'
-            print("[ building dictionary first... ]")
+            logging.info("building dictionary first...")
             build_dict(opt, skip_if_built=True)
+
         # Create model and assign it to the specified task
         self.agent = create_agent(opt)
+        self.agent.opt.log()
         self.world = create_task(opt, self.agent)
         # set up timers
         self.train_time = Timer()
@@ -315,6 +318,7 @@ class TrainLoop:
 
         self.last_valid_epoch = 0
         self.valid_optim = 1 if opt['validation_metric_mode'] == 'max' else -1
+        self.train_reports = []
         self.valid_reports = []
         self.best_valid = None
 
@@ -337,6 +341,7 @@ class TrainLoop:
                 self.train_time.total = obj.get('train_time', 0)
                 self.impatience = obj.get('impatience', 0)
                 self.valid_reports = obj.get('valid_reports', [])
+                self.train_reports = obj.get('train_reports', [])
                 if 'best_valid' in obj:
                     self.best_valid = obj['best_valid']
                 else:
@@ -359,6 +364,7 @@ class TrainLoop:
         if not is_primary_worker():
             # never do IO as a non-primary worker
             return
+
         if not self.opt.get('model_file'):
             # nothing to save to, just exit
             return
@@ -388,12 +394,9 @@ class TrainLoop:
                 {
                     'parleys': self.parleys,
                     'train_time': self.train_time.time(),
-                    'total_epochs': (
-                        self._preempted_epochs
-                        + num_workers() * self.world.get_total_epochs()
-                    ),
-                    'impatience': self.impatience,
-                    'valid_reports': [self._safe_report(v) for v in self.valid_reports],
+                    'total_epochs': self._total_epochs,
+                    'train_reports': self.train_reports,
+                    'valid_reports': self.valid_reports,
                     'best_valid': self.best_valid,
                 },
                 f,
@@ -417,8 +420,11 @@ class TrainLoop:
         valid_report = self._run_eval(
             self.valid_worlds, opt, 'valid', opt['validation_max_exs']
         )
-        v = valid_report.copy()
+        v = self._safe_report(valid_report.copy())
         v['train_time'] = self.train_time.time()
+        v['parleys'] = self.parleys
+        v['total_exs'] = self._total_exs
+        v['total_epochs'] = self._total_epochs
         self.valid_reports.append(v)
         # logging
         if opt['tensorboard_log'] and is_primary_worker():
@@ -432,7 +438,7 @@ class TrainLoop:
             and opt.get('save_after_valid')
             and is_primary_worker()
         ):
-            print("[ saving model checkpoint: " + opt['model_file'] + ".checkpoint ]")
+            logging.info(f"saving model checkpoint: {opt['model_file']}.checkpoint")
             self.save_model('.checkpoint')
 
         # send valid metrics to agent if the agent wants them
@@ -450,8 +456,8 @@ class TrainLoop:
             self.best_valid is None
             or self.valid_optim * new_valid > self.valid_optim * self.best_valid
         ):
-            print(
-                '[ new best {}: {:.4g}{} ]'.format(
+            logging.success(
+                'new best {}: {:.4g}{}'.format(
                     opt['validation_metric'],
                     new_valid,
                     ' (previous best was {:.4g})'.format(self.best_valid)
@@ -462,19 +468,19 @@ class TrainLoop:
             self.best_valid = new_valid
             self.impatience = 0
             if opt.get('model_file') and is_primary_worker():
-                print("[ saving best valid model: " + opt['model_file'] + " ]")
+                logging.info(f"saving best valid model: {opt['model_file']}")
                 self.save_model()
                 self.saved = True
             if (
                 opt['validation_metric'] == 'accuracy'
                 and self.best_valid >= opt['validation_cutoff']
             ):
-                print('[ task solved! stopping. ]')
+                logging.info('task solved! stopping.')
                 return True
         else:
             self.impatience += 1
-            print(
-                '[ did not beat best {}: {} impatience: {} ]'.format(
+            logging.report(
+                'did not beat best {}: {} impatience: {}'.format(
                     opt['validation_metric'], round(self.best_valid, 4), self.impatience
                 )
             )
@@ -485,7 +491,7 @@ class TrainLoop:
             opt['validation_patience'] > 0
             and self.impatience >= opt['validation_patience']
         ):
-            print('[ ran out of patience! stopping training. ]')
+            logging.info('ran out of patience! stopping training.')
             return True
         return False
 
@@ -524,7 +530,7 @@ class TrainLoop:
             limits the number of examples if max_exs > 0
         """
 
-        print('[ running eval: ' + datatype + ' ]')
+        logging.info(f'running eval: {datatype}')
         timer = Timer()
         reports = []
 
@@ -542,8 +548,8 @@ class TrainLoop:
         report = self._sync_metrics(report)
 
         metrics = f'{datatype}:\n{nice_report(report)}\n'
-        print(f'[ eval completed in {timer.time():.2f}s ]')
-        print(metrics)
+        logging.info(f'eval completed in {timer.time():.2f}s')
+        logging.report(metrics)
 
         # write to file
         if write_log and opt.get('model_file') and is_primary_worker():
@@ -605,20 +611,27 @@ class TrainLoop:
         train_report = self._sync_metrics(train_report)
         self.world.reset_metrics()
 
+        train_report_trainstats = self._safe_report(train_report)
+        train_report_trainstats['total_epochs'] = self._total_epochs
+        train_report_trainstats['total_exs'] = self._total_exs
+        train_report_trainstats['parleys'] = self.parleys
+        train_report_trainstats['train_time'] = self.train_time.time()
+        self.train_reports.append(train_report_trainstats)
+
         # time elapsed
-        logs.append('time:{}s'.format(np.floor(self.train_time.time())))
-        logs.append('total_exs:{}'.format(self._total_exs))
+        logs.append(f'time:{self.train_time.time():.0f}s')
+        logs.append(f'total_exs:{self._total_exs}')
 
         if self._total_epochs >= 0:
             # only if it's unbounded
-            logs.append('epochs:{}'.format(round(self._total_epochs, 2)))
+            logs.append(f'epochs:{self._total_epochs:.2f}')
 
         time_left = self._compute_eta(self._total_epochs, self.train_time.time())
         if time_left is not None:
-            logs.append('time_left:{}s'.format(max(0, np.ceil(time_left))))
+            logs.append(f'time_left:{max(0,time_left):.0f}s')
 
-        log = '[ {} ]\n{}\n'.format(' '.join(logs), nice_report(train_report))
-        print(log)
+        log = '{}\n{}\n'.format(' '.join(logs), nice_report(train_report))
+        logging.info(log)
         self.log_time.reset()
 
         if opt['tensorboard_log'] and is_primary_worker():
@@ -630,7 +643,7 @@ class TrainLoop:
 
         :return: tuple of reports (validation_report, test_report)
         """
-        print('[ training... ]')
+        logging.info('training...')
         opt = self.opt
         world = self.world
         with world:
@@ -665,14 +678,12 @@ class TrainLoop:
                 # check counters and timers
                 if self._total_epochs >= self.max_num_epochs:
                     self.log()
-                    print(
-                        '[ num_epochs completed:{} time elapsed:{}s ]'.format(
-                            self.max_num_epochs, train_time
-                        )
+                    logging.info(
+                        f'num_epochs completed:{self.max_num_epochs} time elapsed:{train_time}s'
                     )
                     break
                 if train_time > self.max_train_time:
-                    print('[ max_train_time elapsed:{}s ]'.format(train_time))
+                    logging.info(f'max_train_time elapsed:{train_time}s')
                     break
                 if log_time > self.log_every_n_secs:
                     self.log()
@@ -704,10 +715,8 @@ class TrainLoop:
                     and opt.get('model_file')
                     and is_primary_worker()
                 ):
-                    print(
-                        "[ saving model checkpoint: {}.checkpoint".format(
-                            opt['model_file']
-                        )
+                    logging.info(
+                        f"saving model checkpoint: {opt['model_file']}.checkpoint"
                     )
                     if opt['tensorboard_log'] and is_primary_worker():
                         self.tb_logger.flush()
@@ -750,13 +759,15 @@ class TrainLoop:
         return v_report, t_report
 
 
+@register_script('train_model', aliases=['tm', 'train'])
 class TrainModel(ParlaiScript):
     @classmethod
     def setup_args(cls):
         return setup_args()
 
     def run(self):
-        return TrainLoop(self.opt).train()
+        self.train_loop = TrainLoop(self.opt)
+        return self.train_loop.train()
 
 
 if __name__ == '__main__':

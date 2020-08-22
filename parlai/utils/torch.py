@@ -7,6 +7,7 @@
 Utility methods for dealing with torch code.
 """
 
+import os
 from typing import Union, Optional, Tuple, Any, List, Sized, TypeVar
 import itertools
 from collections import namedtuple
@@ -40,6 +41,18 @@ def neginf(dtype: torch.dtype) -> float:
         return -NEAR_INF_FP16
     else:
         return -NEAR_INF
+
+
+def atomic_save(state_dict: Any, path: str) -> None:
+    """
+    Like torch.save, but atomic.
+
+    Useful for preventing trouble coming from being pre-empted or killed while writing
+    to disk. Works by writing to a temporary file, and then renaming the file to the
+    final name.
+    """
+    torch.save(state_dict, path + ".tmp")
+    os.rename(path + ".tmp", path)
 
 
 def padded_tensor(
@@ -241,7 +254,7 @@ def compute_grad_norm(parameters, norm_type=2.0):
     """
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
-    parameters = [p.grad for p in parameters if p is not None]
+    parameters = [p for p in parameters if p is not None and p.grad is not None]
     total_norm = 0
     for p in parameters:
         param_norm = p.grad.data.norm(norm_type)
@@ -354,6 +367,8 @@ class PipelineHelper(object):
         if not isinstance(submodule, torch.nn.ModuleList):
             # not a ModuleList, leave it untouched
             return
+        if getattr(submodule, 'model_parallel_exempt', False):
+            return
 
         assert isinstance(submodule, torch.nn.ModuleList)  # for typechecker
         layers = submodule
@@ -380,7 +395,7 @@ class PipelineHelper(object):
             # mark a layer as going to the given element
             layer_assignments[mostfree] += 1
 
-        devices = self.devices[:]
+        devices = [d for i, d in enumerate(self.devices[:]) if layer_assignments[d] > 0]
         for layer_no, layer in enumerate(layers):
             layer_gpu = devices[0]
             assert layer_assignments[layer_gpu] > 0
@@ -486,7 +501,9 @@ class PipelineHelper(object):
             # base case
             return torch.cat(items, dim=dim)  # type: ignore
         elif isinstance(item0, tuple):
-            return tuple(PipelineHelper.join(x, dim=dim) for x in zip(*items))  # type: ignore
+            return tuple(
+                PipelineHelper.join(x, dim=dim) for x in zip(*items)
+            )  # type: ignore
         elif isinstance(item0, dict):
             keys = item0.keys()
             return {  # type: ignore
@@ -506,9 +523,13 @@ class PipelineHelper(object):
         if isinstance(chunk, torch.Tensor):
             return chunk.to(device)  # type: ignore
         elif isinstance(chunk, tuple):
-            return tuple(PipelineHelper.chunk_to(c, device) for c in chunk)  # type: ignore
+            return tuple(
+                PipelineHelper.chunk_to(c, device) for c in chunk
+            )  # type: ignore
         elif isinstance(chunk, dict):
-            return {k: PipelineHelper.chunk_to(v, device) for k, v in chunk.items()}  # type: ignore
+            return {
+                k: PipelineHelper.chunk_to(v, device) for k, v in chunk.items()
+            }  # type: ignore
         else:
             raise TypeError('chunk_to only compatible with tensors, tuples or dicts.')
 

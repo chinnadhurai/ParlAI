@@ -3,8 +3,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-from parlai.scripts.eval_model import setup_args
-
 import os
 import unittest
 import parlai.utils.testing as testing_utils
@@ -38,8 +36,7 @@ class TestEvalModel(unittest.TestCase):
         """
         Test output of running eval_model.
         """
-        parser = setup_args()
-        parser.set_defaults(
+        opt = dict(
             task='integration_tests',
             model='repeat_label',
             datatype='valid',
@@ -47,20 +44,18 @@ class TestEvalModel(unittest.TestCase):
             display_examples=False,
         )
 
-        opt = parser.parse_args([], print_args=False)
         valid, test = testing_utils.eval_model(opt)
 
         self.assertEqual(valid['accuracy'], 1)
         self.assertEqual(test['accuracy'], 1)
-        self.assertNotIn('rouge-L', valid)
-        self.assertNotIn('rouge-L', test)
+        self.assertNotIn('rouge_L', valid)
+        self.assertNotIn('rouge_L', test)
 
     def test_metrics_all(self):
         """
         Test output of running eval_model.
         """
-        parser = setup_args()
-        parser.set_defaults(
+        opt = dict(
             task='integration_tests',
             model='repeat_label',
             datatype='valid',
@@ -69,24 +64,22 @@ class TestEvalModel(unittest.TestCase):
             metrics='all',
         )
 
-        opt = parser.parse_args([], print_args=False)
         valid, test = testing_utils.eval_model(opt)
 
         self.assertEqual(valid['accuracy'], 1)
-        self.assertEqual(valid['rouge-L'], 1)
-        self.assertEqual(valid['rouge-1'], 1)
-        self.assertEqual(valid['rouge-2'], 1)
+        self.assertEqual(valid['rouge_L'], 1)
+        self.assertEqual(valid['rouge_1'], 1)
+        self.assertEqual(valid['rouge_2'], 1)
         self.assertEqual(test['accuracy'], 1)
-        self.assertEqual(test['rouge-L'], 1)
-        self.assertEqual(test['rouge-1'], 1)
-        self.assertEqual(test['rouge-2'], 1)
+        self.assertEqual(test['rouge_L'], 1)
+        self.assertEqual(test['rouge_1'], 1)
+        self.assertEqual(test['rouge_2'], 1)
 
     def test_metrics_select(self):
         """
         Test output of running eval_model.
         """
-        parser = setup_args()
-        parser.set_defaults(
+        opt = dict(
             task='integration_tests',
             model='repeat_label',
             datatype='valid',
@@ -95,17 +88,16 @@ class TestEvalModel(unittest.TestCase):
             metrics='accuracy,rouge',
         )
 
-        opt = parser.parse_args([], print_args=False)
         valid, test = testing_utils.eval_model(opt)
 
         self.assertEqual(valid['accuracy'], 1)
-        self.assertEqual(valid['rouge-L'], 1)
-        self.assertEqual(valid['rouge-1'], 1)
-        self.assertEqual(valid['rouge-2'], 1)
+        self.assertEqual(valid['rouge_L'], 1)
+        self.assertEqual(valid['rouge_1'], 1)
+        self.assertEqual(valid['rouge_2'], 1)
         self.assertEqual(test['accuracy'], 1)
-        self.assertEqual(test['rouge-L'], 1)
-        self.assertEqual(test['rouge-1'], 1)
-        self.assertEqual(test['rouge-2'], 1)
+        self.assertEqual(test['rouge_L'], 1)
+        self.assertEqual(test['rouge_1'], 1)
+        self.assertEqual(test['rouge_2'], 1)
 
         self.assertNotIn('bleu-4', valid)
         self.assertNotIn('bleu-4', test)
@@ -116,7 +108,6 @@ class TestEvalModel(unittest.TestCase):
                 'task': 'integration_tests:candidate,'
                 'integration_tests:multiturnCandidate',
                 'model': 'random_candidate',
-                'num_epochs': 0.5,
                 'aggregate_micro': False,
             }
         )
@@ -136,7 +127,6 @@ class TestEvalModel(unittest.TestCase):
                 'task': 'integration_tests:candidate,'
                 'integration_tests:multiturnCandidate',
                 'model': 'random_candidate',
-                'num_epochs': 0.5,
                 'aggregate_micro': False,
             }
         )
@@ -157,7 +147,6 @@ class TestEvalModel(unittest.TestCase):
                 'task': 'integration_tests:candidate,'
                 'integration_tests:multiturnCandidate',
                 'model': 'random_candidate',
-                'num_epochs': 0.5,
                 'aggregate_micro': True,
             }
         )
@@ -175,7 +164,6 @@ class TestEvalModel(unittest.TestCase):
                 'task': 'integration_tests:candidate,'
                 'integration_tests:multiturnCandidate',
                 'model': 'random_candidate',
-                'num_epochs': 0.5,
                 'aggregate_micro': True,
             }
         )
@@ -217,8 +205,7 @@ class TestEvalModel(unittest.TestCase):
         """
         with testing_utils.tempdir() as tmpdir:
             save_report = os.path.join(tmpdir, 'report')
-            parser = setup_args()
-            parser.set_defaults(
+            opt = dict(
                 task='integration_tests',
                 model='repeat_label',
                 datatype='valid',
@@ -227,8 +214,6 @@ class TestEvalModel(unittest.TestCase):
                 save_world_logs=True,
                 report_filename=save_report,
             )
-
-            opt = parser.parse_args([], print_args=False)
             valid, test = testing_utils.eval_model(opt)
 
 

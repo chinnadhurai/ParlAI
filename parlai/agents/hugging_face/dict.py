@@ -64,12 +64,23 @@ class HuggingFaceDictionaryAgent(DictionaryAgent, ABC):
 
 
 class Gpt2DictionaryAgent(HuggingFaceDictionaryAgent):
+    def is_prebuilt(self):
+        """
+        Indicates whether the dictionary is fixed, and does not require building.
+        """
+        return True
+
     def get_tokenizer(self, opt):
         """
         Instantiate tokenizer.
         """
         model_sz = opt['gpt2_size']
-        fle_key = 'gpt2' if model_sz == 'small' else f'gpt2-{model_sz}'
+        if model_sz == 'small':
+            fle_key = 'gpt2'
+        elif model_sz == 'distilgpt2':
+            fle_key = 'distilgpt2'
+        else:
+            fle_key = f'gpt2-{model_sz}'
         return GPT2Tokenizer.from_pretrained(fle_key)
 
     def _define_special_tokens(self, opt):
