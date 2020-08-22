@@ -98,7 +98,7 @@ then
                 echo "---------------------"
                 echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_last_few_only__"$NUM_TURNS_TO_RETAIN
                 LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_last_few_only__"$NUM_TURNS_TO_RETAIN".txt"
-                python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "last_few_only__"$NUM_TURNS_TO_RETAIN --datatype $DATATYPE > $LOGFILE
+                python -W ignore parlai/scripts/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "last_few_only__"$NUM_TURNS_TO_RETAIN --datatype $DATATYPE > $LOGFILE
                 grep FINAL_REPORT $LOGFILE
             
             done
@@ -115,7 +115,7 @@ then
             echo "---------------------"
             echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_NoPerturb"
             LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_no_perturb.txt"
-            python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "None" --datatype $DATATYPE > $LOGFILE
+            python -W ignore parlai/scripts/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb "None" --datatype $DATATYPE > $LOGFILE
             grep FINAL_REPORT $LOGFILE
 
             for PERTURB_TYPE in "only_last" "shuffle" "reverse_utr_order" "drop_first" "drop_last" "worddrop_random" "verbdrop_random" "noundrop_random" "wordshuf_random" "wordreverse_random"
@@ -123,7 +123,7 @@ then
                 echo "---------------------"
                 echo "CONFIG : "$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE
                 LOGFILE=$LOGDIR/log_$DATASET"_"$MODEL_TYPE"_"$DATATYPE"_"$PERTURB_TYPE".txt"
-                python -W ignore examples/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE --datatype $DATATYPE > $LOGFILE
+                python -W ignore parlai/scripts/eval_model.py $EVAL_MODEL_ARGS -t $DATASET -mf $MF -sft True -pb $PERTURB_TYPE --datatype $DATATYPE > $LOGFILE
                 grep FINAL_REPORT $LOGFILE
             done
         done 
@@ -131,7 +131,7 @@ then
 elif [ $RUN_MODE = "train" ]
 then
     echo $TRAIN_MODEL_ARGS
-    python examples/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS
+    python parlai/scripts/train_model.py -t $DATASET -mf $MF $TRAIN_MODEL_ARGS
 else
     echo "Invalid Run mode provided. Supported : train, perturb, last_few_only"
     echo "Example train command : sh run.sh train <model_type> <dataset> <run_id>"
